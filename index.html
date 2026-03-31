@@ -245,7 +245,7 @@ const INIT={
 
 // State
 const APP_KEY='workflow_app_state_v4';
-const AUTH_KEY='workflow_auth_v3';
+const AUTH_KEY='workflow_auth_v4';
 const DEMO_CODE='246810';
 let saveTimer=null;
 let searchTimer=null;
@@ -261,13 +261,8 @@ function writeJSON(k,v){
 }
 function mkAuth(){
   return {
-    companies:[
-      {id:'company-a',name:'Company A'},
-      {id:'company-b',name:'Company B'}
-    ],
-    users:[
-      {email:'admin@workflow.dev',password:'demo123',name:'Admin',verified:false,otpRequired:true,code:DEMO_CODE,role:'admin',title:'Team Admin',color:'#7c6af7',company:DEFAULT_COMPANY}
-    ],
+    companies:[],
+    users:[],
     invites:[],
     session:null,
     pendingEmail:'',
@@ -277,7 +272,7 @@ function mkAuth(){
 }
 function normalizeAuth(a){
   if(!a||!Array.isArray(a.users))return mkAuth();
-  const companies=(Array.isArray(a.companies)&&a.companies.length)?a.companies:[{id:DEFAULT_COMPANY,name:'Company A'}];
+  const companies=(Array.isArray(a.companies)&&a.companies.length)?a.companies:[];
   let users=a.users
     .filter(u=>u&&typeof u.email==='string'&&u.email.trim()&&typeof u.name==='string'&&u.name.trim())
     .map((u,i)=>({
@@ -293,7 +288,7 @@ function normalizeAuth(a){
       company:u.company||DEFAULT_COMPANY,
       invited:u.invited===true
     }));
-  if(!users.length)users=mkAuth().users;
+  if(!users.length)users=[];
   const invites=Array.isArray(a.invites)?a.invites:[];
   const session=a.session?{...a.session,company:a.session.company||users.find(u=>u.email===a.session.email)?.company||DEFAULT_COMPANY}:null;
   return {...a,companies,users,invites,mode:a.mode||'login',note:a.note||'',pendingEmail:a.pendingEmail||'',session};
@@ -676,8 +671,8 @@ ${urlInviteCode?`<div class="up-note">Invite link detected. Set your name and ne
 <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="su-btn">Create account</button>
 <div class="auth-foot"><button class="auth-link" id="goto-login">Already have an account?</button></div>
 `:`
-<div class="auth-field"><label class="auth-label">Email</label><input class="auth-inp" id="li-email" placeholder="admin@workflow.dev"></div>
-<div class="auth-field"><label class="auth-label">Password</label><input type="password" class="auth-inp" id="li-pass" placeholder="demo123"></div>
+<div class="auth-field"><label class="auth-label">Email</label><input class="auth-inp" id="li-email" placeholder="you@company.com"></div>
+<div class="auth-field"><label class="auth-label">Password</label><input type="password" class="auth-inp" id="li-pass" placeholder="Your password"></div>
 <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="li-btn">Log in</button>
 <div class="auth-foot"><button class="auth-link" id="goto-signup">Create new account</button></div>
 `}
