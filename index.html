@@ -299,7 +299,7 @@ function setSupabaseCfg(url,anon){
 initSupabaseClient();
 async function sbSignUp(email,password,meta){
   if(!sb)return {error:{message:'Supabase not configured in code yet. Paste SUPABASE_URL and SUPABASE_ANON_KEY.'}};
-  return await sb.auth.signUp({email,password,options:{data:meta||{}}});
+  return await sb.auth.signUp({email,password,options:{data:meta||{},emailRedirectTo:`${location.origin}${location.pathname}`}});
 }
 async function sbSignIn(email,password){
   if(!sb)return {error:{message:'Supabase not configured in code yet. Paste SUPABASE_URL and SUPABASE_ANON_KEY.'}};
@@ -308,6 +308,22 @@ async function sbSignIn(email,password){
 async function sbSignOut(){
   if(!sb)return;
   try{await sb.auth.signOut();}catch(_){}
+}
+async function sbResendSignup(email){
+  if(!sb)return {error:{message:'Supabase not configured.'}};
+  return await sb.auth.resend({type:'signup',email,options:{emailRedirectTo:`${location.origin}${location.pathname}`}});
+}
+async function sbResetPassword(email){
+  if(!sb)return {error:{message:'Supabase not configured.'}};
+  return await sb.auth.resetPasswordForEmail(email,{redirectTo:`${location.origin}${location.pathname}`});
+}
+function mapAuthError(msg){
+  const m=(msg||'').toLowerCase();
+  if(m.includes('email not confirmed')||m.includes('not confirmed'))return 'Email not confirmed yet. Check inbox, then click "Resend confirmation email" below if needed.';
+  if(m.includes('invalid login credentials')||m.includes('invalid'))return 'Invalid email or password.';
+  if(m.includes('rate limit'))return 'Too many attempts. Wait a minute and try again.';
+  if(m.includes('already registered')||m.includes('already been registered'))return 'Account already exists. Use Log in.';
+  return msg||'Authentication failed.';
 }
 async function sbEnsureCompany(companyId,name,ownerEmail){
   if(!sb||!companyId)return;
@@ -792,6 +808,17 @@ function aiStudioReply(question){
   const q=(question||'').trim();
   const lower=q.toLowerCase();
   const target=findTaskFromQuery(q);
+  const isMarketing=/\b(campaign|ads?|paid media|funnel|ctr|cpa|roas|creative|targeting|landing page)\b/.test(lower);
+  const isProduct=/\b(feature|dev|developer|build|qa|deploy|release|bug|onboarding|product)\b/.test(lower);
+  const execPlan=(goal)=>{
+    const team=target?taskMembers(target).join(', '):'Owner, Developer, Marketer, Designer';
+    const status=target?(colById(target.cid)?.name||'Unknown'):'Not started';
+    const due=target?(fmtDue(target.due||'')?.t||target.due||'TBD'):'TBD';
+    const group=target?normalizeGroup(target.group):'CRM';
+    const mkExtra=isMarketing?`\n- Funnel: Awareness -> Consideration -> Conversion\n- Creative: 3 variants per audience\n- Tracking: UTM + pixel + conversion API\n- Core metrics: CTR, CPC, CPA, ROAS`:'';
+    const devExtra=isProduct?`\n- Build phases: discovery -> implementation -> QA -> deploy\n- Quality gates: staging QA + rollback plan`:'';
+    return `1. OBJECTIVE\n- ${goal}\n\n2. BREAKDOWN (TASK TREE)\n- Discovery and requirements\n- Build assets/work items\n- Review and QA\n- Launch and measurement\n\n3. PRIORITIZATION\n- Start with blockers and highest-impact deliverables first.\n\n4. DEPENDENCIES\n- Scope approval -> asset creation -> implementation -> QA -> launch\n\n5. ASSIGNMENTS\n- Suggested owners: ${team}\n\n6. TIMELINE\n- Current status: ${status}\n- Suggested due target: ${due}\n\n7. RISKS & BOTTLENECKS\n- Scope creep, unclear ownership, missing QA checkpoints.\n\n8. OPTIMIZATION IDEAS\n- Batch approvals, parallelize independent tasks, use templates.${mkExtra}${devExtra}\n\nContext task group: ${group}`;
+  };
   if(/\b(write|create|draft|build)\b.*\bbrief\b/.test(lower)){
     if(target)return buildTaskBrief(target,q);
     if(openTid){
@@ -803,6 +830,9 @@ function aiStudioReply(question){
   if(/\b(task|status|progress|who|owner|working on|assignee|due)\b/.test(lower)){
     if(target)return taskStatusLine(target);
     return 'Tell me a task name and I will report owner, collaborators, status, due date, and progress.';
+  }
+  if(/\b(plan|launch|fix|improve|build|strategy|roadmap|project)\b/.test(lower)){
+    return execPlan(q);
   }
   if(/\b(list|show)\b.*\b(tasks|deadlines|due)\b/.test(lower)){
     const tasks=S.tasks.filter(t=>t.company===currentCompany()).filter(t=>t.due).sort((a,b)=>new Date(a.due)-new Date(b.due)).slice(0,6);
@@ -961,7 +991,7 @@ ${urlInviteCode?`<div class="up-note">Invite link detected. Set your name and ne
 <div class="auth-field"><label class="auth-label">Email</label><input class="auth-inp" id="li-email" placeholder="you@company.com"></div>
 <div class="auth-field"><label class="auth-label">Password</label><input type="password" class="auth-inp" id="li-pass" placeholder="Your password"></div>
 <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="li-btn">Log in</button>
-<div class="auth-foot"><button class="auth-link" id="goto-signup">Create new account</button></div>
+<div class="auth-foot"><button class="auth-link" id="goto-signup">Create new account</button><button class="auth-link" id="resend-confirm">Resend confirmation email</button><button class="auth-link" id="forgot-pass">Reset password</button></div>
 `}
 <div class="divider" style="margin:12px 0"></div>
 <div class="auth-note" style="margin-bottom:8px">Supabase Connection (${hasSupabaseConfig()?'Configured':'Not configured'})</div>
@@ -1341,6 +1371,24 @@ function wire(){
     });
     const gl=$('goto-login');if(gl)gl.addEventListener('click',()=>{setMode('login');render()});
     const gs=$('goto-signup');if(gs)gs.addEventListener('click',()=>{setMode('signup');render()});
+    const resendConfirm=$('resend-confirm');
+    if(resendConfirm)resendConfirm.addEventListener('click',async()=>{
+      const email=$('li-email')?.value.trim().toLowerCase();
+      if(!email){setMode('login','Enter your email first.');return render();}
+      const r=await sbResendSignup(email);
+      if(r.error){setMode('login',mapAuthError(r.error.message));return render();}
+      setMode('login','Confirmation email resent. Check inbox/spam.');
+      render();
+    });
+    const forgotPass=$('forgot-pass');
+    if(forgotPass)forgotPass.addEventListener('click',async()=>{
+      const email=$('li-email')?.value.trim().toLowerCase();
+      if(!email){setMode('login','Enter your email first.');return render();}
+      const r=await sbResetPassword(email);
+      if(r.error){setMode('login',mapAuthError(r.error.message));return render();}
+      setMode('login','Password reset email sent.');
+      render();
+    });
     const su=$('su-btn');
     if(su)su.addEventListener('click',async()=>{
       const name=$('su-name').value.trim();
@@ -1371,9 +1419,9 @@ function wire(){
       }
       const sign=await sbSignUp(email,pass,{name,role,company,companyName:companyName(company)});
       if(sign.error){
-        const msg=(sign.error.message||'Signup failed').toLowerCase();
-        if(msg.includes('already')||msg.includes('registered'))setMode('login','Account already exists. Please log in.');
-        else setMode('signup',sign.error.message||'Signup failed');
+        const mapped=mapAuthError(sign.error.message||'Signup failed');
+        if((sign.error.message||'').toLowerCase().includes('already'))setMode('login','Account already exists. Please log in.');
+        else setMode('signup',mapped);
         return render();
       }
       let users=[...auth.users];
@@ -1418,7 +1466,7 @@ function wire(){
       if(sign.error){
         const invited=auth.users.find(u=>u.email===email&&u.invited);
         if(invited)setMode('signup','Finish account setup from your invite link first.');
-        else setMode('login',sign.error.message||'Invalid email or password.');
+        else setMode('login',mapAuthError(sign.error.message||'Invalid email or password.'));
         return render();
       }
       const u=sign.data?.user;
