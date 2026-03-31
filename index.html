@@ -256,6 +256,15 @@ function readJSON(k,fallback){
     return raw?JSON.parse(raw):fallback;
   }catch(_){return fallback;}
 }
+function readFirstJSON(keys,fallback){
+  for(const k of keys){
+    try{
+      const raw=localStorage.getItem(k);
+      if(raw)return JSON.parse(raw);
+    }catch(_){}
+  }
+  return fallback;
+}
 function writeJSON(k,v){
   try{localStorage.setItem(k,JSON.stringify(v));}catch(_){}
 }
@@ -311,14 +320,14 @@ let studioPrompt='';
 let studioDoc='';
 let studioOut='';
 let studioChat=[];
-let auth=normalizeAuth(readJSON(AUTH_KEY,mkAuth()));
+let auth=normalizeAuth(readFirstJSON([AUTH_KEY,'workflow_auth_v3','workflow_auth_v2','workflow_auth_v1'],mkAuth()));
 const urlParams=new URLSearchParams(location.search);
 const urlInviteCode=urlParams.get('invite')||'';
 const urlMode=(urlParams.get('mode')||'').toLowerCase();
 const urlInviteEmail=(urlParams.get('email')||'').toLowerCase();
 if((urlInviteCode||urlMode==='signup')&&!auth.session)auth.mode='signup';
 
-const snap=readJSON(APP_KEY,null);
+const snap=readFirstJSON([APP_KEY,'workflow_app_state_v3'],null);
 if(snap){
   if(snap.S&&snap.S.projects&&snap.S.columns&&snap.S.tasks)S=snap.S;
   if(snap.activePid)activePid=snap.activePid;
