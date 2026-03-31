@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorkFlow — Project Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f0f12;--surface:#17171c;--surface2:#1e1e25;--surface3:#25252f;
+  --border:#2e2e3a;--border2:#3a3a48;
+  --text:#e8e8f0;--text2:#9090a8;--text3:#5a5a72;
+  --accent:#7c6af7;--accent2:#9d8fff;--accent-bg:rgba(124,106,247,0.12);
+  --green:#34d399;--amber:#fbbf24;--red:#f87171;--blue:#60a5fa;--pink:#f472b6;
+  --radius:10px;--radius-sm:6px;
+  font-family:'DM Sans',sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;overflow:hidden}
+#root{display:flex;height:100vh}
+
+/* SIDEBAR */
+.sidebar{width:232px;min-width:232px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.logo{padding:18px 16px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
+.logo-mark{width:30px;height:30px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center}
+.logo-mark svg{width:16px;height:16px;fill:white}
+.logo-text{font-size:15px;font-weight:600;letter-spacing:-0.3px}
+.sb-section{padding:12px 14px 4px;font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3)}
+.sb-item{display:flex;align-items:center;gap:9px;padding:7px 12px;border-radius:var(--radius-sm);cursor:pointer;color:var(--text2);font-size:13.5px;margin:1px 6px;transition:all 0.14s;position:relative}
+.sb-item:hover{background:var(--surface2);color:var(--text)}
+.sb-item.active{background:var(--accent-bg);color:var(--accent2)}
+.sb-item .ic{width:15px;height:15px;flex-shrink:0;opacity:0.7}
+.sb-item.active .ic{opacity:1}
+.sb-badge{margin-left:auto;background:var(--surface3);color:var(--text3);font-size:10px;font-weight:500;padding:1px 6px;border-radius:20px;font-family:'DM Mono',monospace}
+.sb-item.active .sb-badge{background:var(--accent-bg);color:var(--accent2)}
+.pdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.sb-footer{margin-top:auto;border-top:1px solid var(--border);padding:10px 8px}
+.user-row{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:var(--radius-sm);cursor:pointer}
+.user-row:hover{background:var(--surface2)}
+.av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:white;flex-shrink:0}
+
+/* MAIN */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.topbar{height:54px;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:10px;background:var(--surface);flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:600;letter-spacing:-0.3px;flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all 0.14s;font-family:inherit;white-space:nowrap}
+.btn svg{width:14px;height:14px;flex-shrink:0}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--surface2);color:var(--text);border-color:var(--border2)}
+.btn-primary{background:var(--accent);color:white}
+.btn-primary:hover{background:var(--accent2)}
+.btn-danger{background:transparent;color:var(--red);border:1px solid rgba(248,113,113,0.25)}
+.btn-danger:hover{background:rgba(248,113,113,0.08)}
+.view-tabs{display:flex;gap:2px;background:var(--surface2);padding:3px;border-radius:var(--radius-sm)}
+.v-tab{padding:4px 11px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:500;color:var(--text2);transition:all 0.14s;user-select:none}
+.v-tab.active{background:var(--surface3);color:var(--text)}
+.search-wrap{display:flex;align-items:center;gap:7px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 11px}
+.search-wrap input{background:transparent;border:none;outline:none;color:var(--text);font-size:13px;font-family:inherit;width:130px}
+.search-wrap input::placeholder{color:var(--text3)}
+
+/* CONTENT */
+.content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+
+/* BOARD */
+.board{display:flex;gap:14px;padding:18px;overflow-x:auto;height:100%;align-items:flex-start}
+.board::-webkit-scrollbar{height:6px}
+.board::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.col{min-width:268px;width:268px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;max-height:calc(100vh - 130px)}
+.col-hdr{padding:12px 14px 10px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.col-name{font-size:13px;font-weight:600;flex:1}
+.col-cnt{font-size:10.5px;color:var(--text3);background:var(--surface2);padding:1px 6px;border-radius:10px;font-family:'DM Mono',monospace}
+.col-body{padding:4px 8px 6px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:5px}
+.col-body::-webkit-scrollbar{width:3px}
+.col-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 12px;cursor:pointer;transition:border-color 0.14s,background 0.14s}
+.card:hover{border-color:var(--border2);background:var(--surface3)}
+.card-title{font-size:13px;font-weight:500;line-height:1.4;margin-bottom:8px}
+.card-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.tag{display:inline-flex;font-size:10.5px;font-weight:500;padding:2px 7px;border-radius:20px}
+.pdot-sm{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.card-foot{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+.av-sm{width:20px;height:20px;border-radius:50%;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;color:white;flex-shrink:0}
+.due{font-size:11px;color:var(--text3)}
+.due.late{color:var(--red)}
+.prog{height:3px;background:var(--surface3);border-radius:2px;overflow:hidden;margin-top:8px}
+.prog-fill{height:100%;border-radius:2px;background:var(--green);transition:width 0.3s}
+.add-card{display:flex;align-items:center;gap:6px;padding:7px 14px;color:var(--text3);font-size:12.5px;cursor:pointer;transition:all 0.14s;border-radius:var(--radius-sm);margin:2px 6px 6px}
+.add-card:hover{background:var(--surface2);color:var(--text2)}
+.add-col{min-width:230px;width:230px;border:1.5px dashed var(--border);border-radius:var(--radius);padding:22px 16px;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--text3);cursor:pointer;font-size:13px;transition:all 0.14s;align-self:flex-start}
+.add-col:hover{border-color:var(--border2);color:var(--text2);background:var(--surface)}
+
+/* LIST */
+.list-view{padding:18px;overflow-y:auto;height:100%}
+.list-hdr{display:flex;padding:6px 12px 8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--text3)}
+.lg{margin-bottom:18px}
+.lg-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm) var(--radius-sm) 0 0;cursor:pointer}
+.lg-hdr-title{font-size:13px;font-weight:600;flex:1}
+.lrow{display:flex;align-items:center;padding:9px 12px;background:var(--surface);border:1px solid var(--border);border-top:none;cursor:pointer;transition:background 0.12s}
+.lrow:hover{background:var(--surface2)}
+.lrow:last-child{border-radius:0 0 var(--radius-sm) var(--radius-sm)}
+.lcheck{width:16px;height:16px;border:1.5px solid var(--border2);border-radius:4px;flex-shrink:0;margin-right:12px;display:flex;align-items:center;justify-content:center;transition:all 0.14s;cursor:pointer}
+.lcheck.done{background:var(--green);border-color:var(--green)}
+.ltitle{flex:1;font-size:13px}
+.ltitle.done{text-decoration:line-through;color:var(--text3)}
+.lcol{width:110px;flex-shrink:0;font-size:12px;color:var(--text2)}
+.lcol.sm{width:80px}
+
+/* MODAL */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);animation:fi 0.15s ease}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:14px;width:540px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 28px 70px rgba(0,0,0,0.55);animation:mu 0.18s ease}
+@keyframes fi{from{opacity:0}to{opacity:1}}
+@keyframes mu{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.modal-hdr{padding:20px 20px 0;display:flex;align-items:flex-start;gap:12px}
+.modal-title{flex:1;background:transparent;border:none;outline:none;font-size:18px;font-weight:600;color:var(--text);font-family:inherit;resize:none;line-height:1.3;padding:0}
+.modal-title::placeholder{color:var(--text3)}
+.mclose{width:28px;height:28px;border-radius:6px;background:var(--surface2);border:none;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;transition:all 0.12s}
+.mclose:hover{background:var(--surface3);color:var(--text)}
+.modal-body{padding:16px 20px 8px}
+.mrow{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.mfield{display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px}
+.mlabel{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--text3)}
+.msel{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-size:12.5px;font-family:inherit;outline:none;cursor:pointer;width:100%;transition:border-color 0.12s}
+.msel:focus{border-color:var(--accent)}
+.mdesc{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:13px;font-family:inherit;outline:none;resize:vertical;min-height:78px;line-height:1.5;transition:border-color 0.12s}
+.mdesc:focus{border-color:var(--accent)}
+.mdesc::placeholder{color:var(--text3)}
+.divider{height:1px;background:var(--border);margin:14px 0}
+.st-row{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:12.5px;margin-bottom:4px}
+.stcheck{width:14px;height:14px;border:1.5px solid var(--border2);border-radius:3px;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.12s}
+.stcheck.done{background:var(--green);border-color:var(--green)}
+.add-st{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text3);cursor:pointer;padding:5px 10px;border-radius:var(--radius-sm);transition:all 0.12s}
+.add-st:hover{color:var(--text2);background:var(--surface2)}
+.cm-row{display:flex;gap:8px;margin-bottom:8px}
+.cm-body{flex:1;background:var(--surface2);border-radius:var(--radius-sm);padding:9px 11px}
+.cm-author{font-size:11px;font-weight:600;color:var(--accent2);margin-bottom:3px}
+.cm-text{font-size:12.5px;color:var(--text2);line-height:1.4}
+.cm-input-row{display:flex;gap:8px;align-items:center;margin-top:8px}
+.cm-input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 11px;color:var(--text);font-size:12.5px;font-family:inherit;outline:none;transition:border-color 0.12s}
+.cm-input:focus{border-color:var(--accent)}
+.cm-input::placeholder{color:var(--text3)}
+.modal-foot{padding:12px 20px 20px;display:flex;justify-content:flex-end;gap:8px}
+.att-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.att-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px;position:relative}
+.att-name{font-size:11px;color:var(--text2);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att-media{width:100%;height:88px;object-fit:cover;border-radius:6px;background:var(--surface3)}
+.att-doc{height:88px;border-radius:6px;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text2);text-align:center;padding:8px}
+.att-del{position:absolute;top:6px;right:6px;width:20px;height:20px;border:none;background:rgba(0,0,0,0.55);color:#fff;border-radius:999px;cursor:pointer;font-size:11px}
+.ai-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px}
+.ai-out{white-space:pre-wrap;line-height:1.45;color:var(--text2);font-size:12.5px;max-height:220px;overflow:auto}
+.studio-modal{width:760px}
+.up-note{font-size:11px;color:var(--text3);margin-top:4px}
+.role-pill{font-size:10px;padding:2px 7px;border-radius:999px;border:1px solid var(--border2);color:var(--text2);cursor:pointer}
+.role-pill:hover{color:var(--text)}
+.brief-wrap{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px}
+.brief-feed{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:7px;margin-bottom:8px}
+.brief-msg{padding:8px 10px;border-radius:8px;font-size:12.5px;line-height:1.4;white-space:pre-wrap}
+.brief-msg.user{background:rgba(124,106,247,0.18);border:1px solid rgba(124,106,247,0.32)}
+.brief-msg.bot{background:var(--surface3);border:1px solid var(--border2);color:var(--text2)}
+
+/* TOAST */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--surface3);border:1px solid var(--border2);border-radius:var(--radius);padding:11px 16px;font-size:13px;z-index:200;display:flex;align-items:center;gap:8px;animation:mu 0.18s ease;box-shadow:0 8px 24px rgba(0,0,0,0.4)}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* UTILS */
+.flex{display:flex}.aic{align-items:center}.gap6{gap:6px}.gap8{gap:8px}.gap10{gap:10px}
+input[type=date].msel{color-scheme:dark}
+
+/* AUTH */
+.auth-wrap{height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:
+radial-gradient(circle at 20% 0%,rgba(124,106,247,0.2),transparent 32%),
+radial-gradient(circle at 80% 100%,rgba(52,211,153,0.16),transparent 36%),var(--bg)}
+.auth-card{width:430px;max-width:95vw;background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:22px 22px 18px;box-shadow:0 28px 70px rgba(0,0,0,0.45)}
+.auth-title{font-size:24px;font-weight:700;letter-spacing:-0.5px;margin-bottom:5px}
+.auth-sub{font-size:13px;color:var(--text2);margin-bottom:16px}
+.auth-row{display:flex;gap:10px}
+.auth-field{margin-bottom:11px}
+.auth-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:6px}
+.auth-inp{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 11px;color:var(--text);font-size:13px;font-family:inherit;outline:none}
+.auth-inp:focus{border-color:var(--accent)}
+.auth-note{font-size:12px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin:10px 0 12px}
+.auth-foot{display:flex;justify-content:space-between;gap:8px;margin-top:4px}
+.auth-link{background:transparent;border:none;color:var(--accent2);font-size:12.5px;cursor:pointer;padding:3px 0}
+.auth-link:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+const COLORS=['#7c6af7','#34d399','#f472b6','#60a5fa','#fbbf24','#f87171','#a78bfa'];
+const AVATARS={Alex:'#7c6af7',Sam:'#34d399',Jordan:'#f472b6',Casey:'#60a5fa',Morgan:'#fbbf24'};
+
+const INIT={
+  projects:[
+    {id:'p1',name:'Website Redesign',color:'#7c6af7'},
+    {id:'p2',name:'Mobile App',color:'#34d399'},
+    {id:'p3',name:'Marketing Q2',color:'#fbbf24'},
+  ],
+  columns:[
+    {id:'c1',name:'Backlog',color:'#5a5a72',pid:'p1'},
+    {id:'c2',name:'In Progress',color:'#60a5fa',pid:'p1'},
+    {id:'c3',name:'Review',color:'#fbbf24',pid:'p1'},
+    {id:'c4',name:'Done',color:'#34d399',pid:'p1'},
+    {id:'c5',name:'Backlog',color:'#5a5a72',pid:'p2'},
+    {id:'c6',name:'In Progress',color:'#60a5fa',pid:'p2'},
+    {id:'c7',name:'Done',color:'#34d399',pid:'p2'},
+    {id:'c8',name:'Ideas',color:'#f472b6',pid:'p3'},
+    {id:'c9',name:'In Progress',color:'#60a5fa',pid:'p3'},
+    {id:'c10',name:'Done',color:'#34d399',pid:'p3'},
+  ],
+  tasks:[
+    {id:'t1',title:'Define brand guidelines and color system',cid:'c1',pri:'high',who:'Alex',due:'2026-04-10',tags:['Design'],subs:[{id:'s1',text:'Color palette',done:true},{id:'s2',text:'Typography scale',done:false}],cms:[{who:'Sam',text:'Should we include dark mode variants?'}],desc:'Establish the core visual identity for the redesign project.'},
+    {id:'t2',title:'Audit current site performance metrics',cid:'c1',pri:'medium',who:'Sam',due:'2026-04-08',tags:['Research'],subs:[],cms:[],desc:''},
+    {id:'t3',title:'Design new homepage hero section',cid:'c2',pri:'high',who:'Jordan',due:'2026-04-05',tags:['Design','UI'],subs:[{id:'s3',text:'Desktop mockup',done:true},{id:'s4',text:'Mobile mockup',done:false},{id:'s5',text:'Animation spec',done:false}],cms:[{who:'Alex',text:'Love the direction! Can we try a darker background?'},{who:'Jordan',text:'Working on it now'}],desc:'Create a compelling hero section that drives conversions.'},
+    {id:'t4',title:'Implement responsive navigation',cid:'c2',pri:'medium',who:'Casey',due:'2026-04-12',tags:['Dev'],subs:[{id:'s6',text:'Desktop nav',done:true},{id:'s7',text:'Mobile hamburger menu',done:false}],cms:[],desc:''},
+    {id:'t5',title:'Write copy for About page',cid:'c3',pri:'low',who:'Morgan',due:'2026-03-28',tags:['Content'],subs:[],cms:[{who:'Casey',text:'Needs SEO review before approval'}],desc:''},
+    {id:'t6',title:'Set up CI/CD pipeline',cid:'c3',pri:'high',who:'Casey',due:'2026-04-15',tags:['Dev'],subs:[{id:'s8',text:'GitHub Actions',done:true},{id:'s9',text:'Staging env',done:true},{id:'s10',text:'Production deploy',done:false}],cms:[],desc:''},
+    {id:'t7',title:'Old homepage archived',cid:'c4',pri:'low',who:'Alex',due:'2026-03-20',tags:['Admin'],subs:[],cms:[],desc:''},
+    {id:'t8',title:'Analytics integration',cid:'c4',pri:'medium',who:'Sam',due:'2026-03-22',tags:['Dev'],subs:[],cms:[],desc:''},
+    {id:'t9',title:'Design onboarding flow screens',cid:'c5',pri:'high',who:'Jordan',due:'2026-04-18',tags:['Design'],subs:[{id:'s11',text:'Wireframes',done:true},{id:'s12',text:'High fidelity',done:false}],cms:[],desc:''},
+    {id:'t10',title:'Push notification system',cid:'c6',pri:'medium',who:'Casey',due:'2026-04-20',tags:['Dev'],subs:[],cms:[],desc:''},
+    {id:'t11',title:'Q2 campaign strategy deck',cid:'c8',pri:'high',who:'Morgan',due:'2026-04-22',tags:['Strategy'],subs:[],cms:[],desc:''},
+  ]
+};
+
+// State
+const APP_KEY='workflow_app_state_v3';
+const AUTH_KEY='workflow_auth_v1';
+const DEMO_CODE='246810';
+let saveTimer=null;
+let searchTimer=null;
+
+function readJSON(k,fallback){
+  try{
+    const raw=localStorage.getItem(k);
+    return raw?JSON.parse(raw):fallback;
+  }catch(_){return fallback;}
+}
+function writeJSON(k,v){
+  try{localStorage.setItem(k,JSON.stringify(v));}catch(_){}
+}
+function mkAuth(){
+  return {
+    users:[
+      {email:'alex@workflow.dev',password:'demo123',name:'Alex',verified:true,code:'',role:'admin',title:'Product Designer',color:'#7c6af7'},
+      {email:'sam@workflow.dev',password:'demo123',name:'Sam',verified:true,code:'',role:'member',title:'Data Analyst',color:'#34d399'},
+      {email:'jordan@workflow.dev',password:'demo123',name:'Jordan',verified:true,code:'',role:'member',title:'UI Designer',color:'#f472b6'},
+      {email:'casey@workflow.dev',password:'demo123',name:'Casey',verified:true,code:'',role:'member',title:'Engineer',color:'#60a5fa'},
+      {email:'morgan@workflow.dev',password:'demo123',name:'Morgan',verified:true,code:'',role:'member',title:'Strategist',color:'#fbbf24'}
+    ],
+    session:null,
+    pendingEmail:'',
+    mode:'login',
+    note:''
+  };
+}
+function normalizeAuth(a){
+  if(!a||!Array.isArray(a.users))return mkAuth();
+  const users=a.users.map((u,i)=>({
+    email:(u.email||`user${i}@workflow.dev`).toLowerCase(),
+    password:u.password||'demo123',
+    name:u.name||`User ${i+1}`,
+    verified:u.verified!==false,
+    code:u.code||'',
+    role:u.role==='admin'?'admin':'member',
+    title:u.title||'Team Member',
+    color:u.color||COLORS[i%COLORS.length]
+  }));
+  return {...a,users,mode:a.mode||'login',note:a.note||'',pendingEmail:a.pendingEmail||'',session:a.session||null};
+}
+
+let S=JSON.parse(JSON.stringify(INIT));
+let activePid='p1';
+let activeView='board';
+let activeSection='project';
+let activeMember='';
+let openTid=null;
+let search='';
+let showNewModal=false;
+let showAiStudio=false;
+let showUserModal=false;
+let profileEmail='';
+let stInputOpen=false;
+let newTask={title:'',cid:'',pri:'medium',who:'Alex',due:'',desc:''};
+let studioPrompt='';
+let studioDoc='';
+let studioOut='';
+let auth=normalizeAuth(readJSON(AUTH_KEY,mkAuth()));
+
+const snap=readJSON(APP_KEY,null);
+if(snap){
+  if(snap.S&&snap.S.projects&&snap.S.columns&&snap.S.tasks)S=snap.S;
+  if(snap.activePid)activePid=snap.activePid;
+  if(snap.activeView)activeView=snap.activeView;
+  if(snap.activeSection)activeSection=snap.activeSection;
+  if(typeof snap.search==='string')search=snap.search;
+  if(typeof snap.activeMember==='string')activeMember=snap.activeMember;
+}
+if(!auth||!Array.isArray(auth.users))auth=mkAuth();
+
+// Helpers
+const $=id=>document.getElementById(id);
+const qq=sel=>document.querySelectorAll(sel);
+const currentUser=()=>auth.users.find(u=>u.email===auth?.session?.email)||null;
+const me=()=>currentUser()?.name||auth?.session?.name||'Alex';
+const isAdmin=()=>currentUser()?.role==='admin';
+const colorForName=name=>AVATARS[name]||auth.users.find(u=>u.name===name)?.color||COLORS[(name?.charCodeAt(0)||0)%COLORS.length];
+const memberList=()=>Array.from(new Set([...auth.users.map(u=>u.name),...S.tasks.map(t=>t.who)]));
+const cleanWords=s=>(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>3);
+
+function ensureTaskShape(t){
+  if(!Array.isArray(t.atts))t.atts=[];
+  if(!t.ai||typeof t.ai!=='object')t.ai={prompt:'',doc:'',out:''};
+  if(typeof t.ai.prompt!=='string')t.ai.prompt='';
+  if(typeof t.ai.doc!=='string')t.ai.doc='';
+  if(typeof t.ai.out!=='string')t.ai.out='';
+  if(!Array.isArray(t.briefChat))t.briefChat=[];
+}
+
+function persistSoon(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>{
+    writeJSON(APP_KEY,{S,activePid,activeView,activeSection,search,activeMember});
+  },180);
+}
+function setAuth(next){
+  auth=normalizeAuth(next);
+  writeJSON(AUTH_KEY,auth);
+}
+S.tasks.forEach(ensureTaskShape);
+
+function projCols(pid){return S.columns.filter(c=>c.pid===pid)}
+function colTasks(cid){return S.tasks.filter(t=>t.cid===cid)}
+function projTasks(pid){const ids=projCols(pid).map(c=>c.id);return S.tasks.filter(t=>ids.includes(t.cid))}
+function colById(cid){return S.columns.find(c=>c.id===cid)||null}
+function taskPid(task){return colById(task.cid)?.pid||activePid}
+function normCol(name){
+  if(name==='Backlog'||name==='In Progress'||name==='Review'||name==='Done')return name;
+  return 'Other';
+}
+function makeScopedColumns(section){
+  const byMember=t=>!activeMember||t.who===activeMember;
+  if(section==='project'){
+    return projCols(activePid).map(c=>({...c,tasks:colTasks(c.id).filter(byMember)}));
+  }
+  const scoped=S.tasks.filter(t=>{
+    if(!byMember(t))return false;
+    if(section==='my')return t.who===me();
+    if(section==='inbox'){
+      const c=colById(t.cid);
+      return c&&c.name!=='Done';
+    }
+    return true;
+  });
+  const groups=[
+    {id:'g-backlog',name:'Backlog',color:'#5a5a72',tasks:[]},
+    {id:'g-progress',name:'In Progress',color:'#60a5fa',tasks:[]},
+    {id:'g-review',name:'Review',color:'#fbbf24',tasks:[]},
+    {id:'g-done',name:'Done',color:'#34d399',tasks:[]},
+    {id:'g-other',name:'Other',color:'#f472b6',tasks:[]}
+  ];
+  const idx={Backlog:0,'In Progress':1,Review:2,Done:3,Other:4};
+  scoped.forEach(t=>{
+    const key=normCol(colById(t.cid)?.name||'Other');
+    groups[idx[key]].tasks.push(t);
+  });
+  return groups.filter(g=>g.tasks.length||section==='all');
+}
+function progress(task){if(!task.subs.length)return null;return Math.round(task.subs.filter(s=>s.done).length/task.subs.length*100)}
+function priColor(p){return p==='high'?'var(--red)':p==='medium'?'var(--amber)':'var(--text3)'}
+function tagStyle(tag){
+  const m={Design:'var(--pink)',Dev:'var(--blue)',Research:'var(--accent2)',Content:'var(--green)',Admin:'var(--text2)',UI:'var(--pink)',Infra:'var(--amber)',Strategy:'var(--amber)'};
+  const c=m[tag]||'var(--text2)';return`color:${c};background:${c}22`;
+}
+function fmtDue(d){
+  if(!d)return null;
+  const dt=new Date(d),now=new Date();
+  dt.setHours(0,0,0,0);now.setHours(0,0,0,0);
+  const diff=Math.round((dt-now)/86400000);
+  if(diff<0)return{t:Math.abs(diff)+'d ago',late:true};
+  if(diff===0)return{t:'Today',late:false};
+  if(diff===1)return{t:'Tomorrow',late:false};
+  return{t:dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}),late:false};
+}
+function toast(msg){
+  const el=document.createElement('div');
+  el.className='toast';
+  el.innerHTML=`<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="var(--green)" stroke-width="1.5"/><path d="M5 8l2 2 4-4" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>${msg}`;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),2600);
+}
+function aiSummarize(text,prompt=''){
+  const body=(text||'').replace(/\s+/g,' ').trim();
+  if(!body)return 'No document text provided.';
+  const sents=body.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0,120);
+  const kws=cleanWords(prompt);
+  const scored=sents.map((s,i)=>{
+    const ws=cleanWords(s);
+    const hit=kws.length?ws.filter(w=>kws.includes(w)).length:0;
+    const lenBoost=Math.min(1.4,Math.max(0.5,s.length/120));
+    const posBoost=1/(1+i*0.08);
+    return {s,score:(1+hit*1.8)*lenBoost*posBoost};
+  }).sort((a,b)=>b.score-a.score);
+  const top=scored.slice(0,5).map(x=>x.s.trim());
+  const actions=sents.filter(s=>/\b(should|must|need to|next|action|todo|deliver|review|fix|implement)\b/i.test(s)).slice(0,4);
+  return `Summary:\n- ${top.join('\n- ')}\n\nAction Items:\n${actions.length?actions.map(a=>`- ${a.trim()}`).join('\n'):'- No explicit action items detected.'}`;
+}
+function aiBuildPrompt(goal,style,format,notes){
+  return `You are an expert assistant.\nGoal: ${goal||'Improve the selected document/task.'}\nStyle: ${style||'Clear and concise'}\nOutput format: ${format||'Bullet list with recommendations'}\nConstraints: ${notes||'Use only provided information; be specific.'}\n\nFirst, provide a concise summary. Then provide prioritized next actions.`;
+}
+function briefChatReply(task,question){
+  const q=(question||'').toLowerCase();
+  const brief=(task.desc||task.ai?.doc||'').trim();
+  if(!brief)return 'Add a short brief in Description first, then I can expand it and generate insights.';
+  const sum=aiSummarize(brief,question);
+  const due=task.due?fmtDue(task.due):null;
+  if(/\b(expand|elaborate|detail|flesh out|scope)\b/.test(q)){
+    return `Expanded Brief\n- Objective: ${task.title}\n- Success criteria: measurable improvement in delivery quality and completion.\n- Scope: ${brief.slice(0,220)}${brief.length>220?'...':''}\n- Risks: unclear requirements, timeline slips, review delays.\n- Suggested plan: discovery, draft, review, finalize.\n- Owner: ${task.who}${due?`\n- Timeline: target ${due.t}`:''}`;
+  }
+  if(/\b(insight|insights|risk|improve|recommend|advice)\b/.test(q)){
+    return `Insights\n- Prioritize one clear outcome and define “done” in the brief.\n- Split work into milestones with owners and deadlines.\n- Add review checkpoints early to reduce rework.${due&&due.late?'\n- Timeline alert: this item is overdue, so re-baseline dates immediately.':''}\n\n${sum}`;
+  }
+  return `Brief Assistant\n${sum}\n\nSuggestion: ask “expand this brief” or “give me insights and risks” for deeper output.`;
+}
+async function readFilesAsText(files){
+  const out=[];
+  for(const f of [...files]){
+    const name=(f.name||'').toLowerCase();
+    const ok=f.type.startsWith('text/')||/\.(txt|md|csv|json|html|js|ts|jsx|tsx|py|java|css|xml|yml|yaml)$/i.test(name);
+    if(!ok)continue;
+    out.push(await f.text());
+  }
+  return out.join('\n\n');
+}
+function fileToDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    const fr=new FileReader();
+    fr.onload=()=>resolve(fr.result);
+    fr.onerror=reject;
+    fr.readAsDataURL(file);
+  });
+}
+
+// Render
+function render(){
+  $('root').innerHTML=html();
+  persistSoon();
+  wire();
+}
+
+function html(){
+  if(!auth.session)return authHtml();
+  const showDash=activeSection==='dash';
+  return`<div class="sidebar">${sidebar()}</div>
+<div class="main">${topbar()}
+<div class="content" id="content">${showDash?dashboard():(activeView==='board'?board():list())}</div>
+</div>
+${openTid?taskModal():''}
+${showNewModal?newModal():''}
+${showAiStudio?aiStudioModal():''}
+${showUserModal?userModal():''}`;
+}
+
+function authHtml(){
+  const mode=auth.mode||'login';
+  const title=mode==='signup'?'Create account':mode==='verify'?'Verify email':'Welcome back';
+  const sub=mode==='verify'?'Enter the 6-digit code sent to your email.':'Manage your projects with one secure workspace.';
+  return`<div class="auth-wrap">
+<div class="auth-card">
+<div class="auth-title">${title}</div>
+<div class="auth-sub">${sub}</div>
+${mode==='signup'?`
+<div class="auth-field"><label class="auth-label">Name</label><input class="auth-inp" id="su-name" placeholder="Alex Chen"></div>
+<div class="auth-field"><label class="auth-label">Email</label><input class="auth-inp" id="su-email" placeholder="alex@company.com"></div>
+<div class="auth-field"><label class="auth-label">Password</label><input type="password" class="auth-inp" id="su-pass" placeholder="Minimum 6 characters"></div>
+<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="su-btn">Create account</button>
+<div class="auth-foot"><button class="auth-link" id="goto-login">Already have an account?</button></div>
+`:mode==='verify'?`
+<div class="auth-note">Verification email sent to <b>${auth.pendingEmail||'your inbox'}</b>. In demo mode, code is <b>${DEMO_CODE}</b>.</div>
+<div class="auth-field"><label class="auth-label">Verification code</label><input class="auth-inp" id="vf-code" placeholder="6-digit code"></div>
+<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="vf-btn">Verify email</button>
+<div class="auth-foot"><button class="auth-link" id="vf-resend">Resend code</button><button class="auth-link" id="goto-login">Back to login</button></div>
+`:`
+<div class="auth-field"><label class="auth-label">Email</label><input class="auth-inp" id="li-email" placeholder="alex@workflow.dev"></div>
+<div class="auth-field"><label class="auth-label">Password</label><input type="password" class="auth-inp" id="li-pass" placeholder="demo123"></div>
+<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="li-btn">Log in</button>
+<div class="auth-foot"><button class="auth-link" id="goto-signup">Create new account</button></div>
+`}
+${auth.note?`<div class="auth-note">${auth.note}</div>`:''}
+</div>
+</div>`;
+}
+
+function sidebar(){
+  const myCount=S.tasks.filter(t=>t.who===me()).length;
+  const allCount=S.tasks.length;
+  const mems=memberList();
+  const navItems=[
+    {id:'inbox',label:'Inbox',badge:3,icon:'<path d="M2 10l2-6h8l2 6v3H2v-3z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M2 10h4l1 2h2l1-2h4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>'},
+    {id:'my',label:'My Tasks',badge:myCount,icon:'<circle cx="8" cy="6" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M2 15c0-3.3 2.7-5 6-5s6 1.7 6 5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/>'},
+    {id:'all',label:'All Tasks',badge:allCount,icon:'<rect x="2" y="2" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" fill="none"/><rect x="9" y="2" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" fill="none"/><rect x="2" y="9" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" fill="none"/><rect x="9" y="9" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" fill="none"/>'},
+    {id:'dash',label:'Dashboard',badge:null,icon:'<rect x="2" y="9" width="3" height="5" rx="1" fill="currentColor" opacity=".45"/><rect x="6.5" y="5.5" width="3" height="8.5" rx="1" fill="currentColor" opacity=".65"/><rect x="11" y="2" width="3" height="12" rx="1" fill="currentColor"/>'},
+  ];
+  let h=`<div class="logo"><div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M3 8h4V4H3v4zm0 4h4v-2H3v2zm6 0h4V8h-4v4zm0-8v2h4V4h-4z"/></svg></div><span class="logo-text">WorkFlow</span></div>`;
+  h+=`<div style="padding:8px 8px 0">`;
+  navItems.forEach(n=>{
+    const a=activeSection===n.id?'active':'';
+    h+=`<div class="sb-item ${a}" data-sec="${n.id}"><svg class="ic" viewBox="0 0 16 16">${n.icon}</svg>${n.label}${n.badge!=null?`<span class="sb-badge">${n.badge}</span>`:''}</div>`;
+  });
+  h+=`</div><div class="sb-section" style="margin-top:8px">Projects</div><div style="padding:0 8px">`;
+  S.projects.forEach(p=>{
+    const a=activePid===p.id&&activeSection==='project'?'active':'';
+    const cnt=projTasks(p.id).length;
+    h+=`<div class="sb-item ${a}" data-pid="${p.id}"><div class="pdot" style="background:${p.color}"></div>${p.name}<span class="sb-badge">${cnt}</span></div>`;
+  });
+  h+=`</div><div class="sb-section" style="margin-top:8px">Team</div><div style="padding:0 8px">`;
+  h+=`<div class="sb-item ${!activeMember?'active':''}" data-member=""><div class="pdot" style="background:var(--text3)"></div>All Members</div>`;
+  mems.forEach(m=>{
+    const u=auth.users.find(x=>x.name===m);
+    h+=`<div class="sb-item ${activeMember===m?'active':''}" data-member="${m}"><div class="av" style="background:${colorForName(m)};width:16px;height:16px;font-size:8px">${m[0]}</div>${m}${u&&isAdmin()?`<span class="role-pill" data-open-profile="${u.email}">${u.role==='admin'?'Admin':'User'}</span>`:''}</div>`;
+  });
+  h+=`</div><div class="sb-footer"><div class="user-row" id="logout-row"><div class="av" style="background:linear-gradient(135deg,var(--accent),var(--pink))">${me().slice(0,1)}</div><div><div style="font-size:13px;font-weight:500">${me()}</div><div style="font-size:11px;color:var(--text3)">${isAdmin()?'Admin':'Member'} • Sign out</div></div></div></div>`;
+  return h;
+}
+
+function topbar(){
+  const proj=S.projects.find(p=>p.id===activePid);
+  const titles={inbox:'Inbox',my:'My Tasks',all:'All Tasks',dash:'Dashboard',project:proj?.name||'Tasks'};
+  const title=(titles[activeSection]||'Tasks')+(activeMember?` • ${activeMember}`:'');
+  const showViews=activeSection!=='dash';
+  return`<div class="topbar">
+<div class="topbar-title">${title}</div>
+<div class="search-wrap"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="color:var(--text3)"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5l2.5 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><input id="s-inp" placeholder="Search tasks…" value="${search}"></div>
+${showViews?`<div class="view-tabs"><div class="v-tab ${activeView==='board'?'active':''}" data-view="board">Board</div><div class="v-tab ${activeView==='list'?'active':''}" data-view="list">List</div></div>`:''}
+${isAdmin()?`<button class="btn btn-ghost" id="users-btn">Users</button>`:''}
+<button class="btn btn-ghost" id="ai-btn">AI Studio</button>
+<button class="btn btn-ghost" id="filter-btn"><svg viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Filter</button>
+<button class="btn btn-primary" id="new-btn"><svg viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>New Task</button>
+</div>`;
+}
+
+function board(){
+  const cols=makeScopedColumns(activeSection);
+  const canAddColumns=activeSection==='project';
+  let h=`<div class="board">`;
+  cols.forEach(col=>{
+    let tasks=col.tasks||[];
+    if(search)tasks=tasks.filter(t=>t.title.toLowerCase().includes(search.toLowerCase()));
+    h+=`<div class="col">
+<div class="col-hdr"><div class="pdot" style="background:${col.color}"></div><span class="col-name">${col.name}</span><span class="col-cnt">${tasks.length}</span></div>
+<div class="col-body">`;
+    tasks.forEach(t=>{
+      const p=progress(t);
+      const d=t.due?fmtDue(t.due):null;
+      const av=colorForName(t.who);
+      h+=`<div class="card" data-tid="${t.id}">
+<div class="card-title">${t.title}</div>
+<div class="card-meta"><div class="pdot-sm" style="background:${priColor(t.pri)}" title="${t.pri} priority"></div>${t.tags.map(g=>`<span class="tag" style="${tagStyle(g)}">${g}</span>`).join('')}</div>
+${p!==null?`<div class="prog"><div class="prog-fill" style="width:${p}%"></div></div>`:''}
+<div class="card-foot"><div class="av-sm" style="background:${av}" title="${t.who}">${t.who[0]}</div>${d?`<span class="due${d.late?' late':''}">${d.t}</span>`:''}</div>
+</div>`;
+    });
+    h+=`</div>${activeSection==='project'?`<div class="add-card" data-addcol="${col.id}"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1.5v8M1.5 5.5h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Add task</div>`:''}</div>`;
+  });
+  h+=`${canAddColumns?`<div class="add-col" id="add-col-btn"><svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 2v11M2 7.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Add column</div>`:''}</div>`;
+  return h;
+}
+
+function list(){
+  const cols=makeScopedColumns(activeSection);
+  let h=`<div class="list-view">
+<div class="list-hdr"><div style="flex:1">Task</div><div style="width:110px">Assignee</div><div style="width:110px">Priority</div><div style="width:110px">Due</div><div style="width:90px">Status</div></div>`;
+  cols.forEach(col=>{
+    let tasks=col.tasks||[];
+    if(search)tasks=tasks.filter(t=>t.title.toLowerCase().includes(search.toLowerCase()));
+    const done=col.name==='Done';
+    h+=`<div class="lg"><div class="lg-hdr"><div class="pdot" style="background:${col.color}"></div><span class="lg-hdr-title">${col.name}</span><span style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${tasks.length}</span></div>`;
+    if(tasks.length===0){h+=`<div class="lrow" style="color:var(--text3);font-size:12.5px;cursor:default">No tasks</div>`;}
+    tasks.forEach(t=>{
+      const av=colorForName(t.who);
+      const d=t.due?fmtDue(t.due):null;
+      h+=`<div class="lrow" data-tid="${t.id}">
+<div class="lcheck${done?' done':''}" data-lcheck="${t.id}">${done?`<svg width="9" height="9" viewBox="0 0 9 9" fill="none"><path d="M1.5 4.5l2 2 4-4" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`:''}</div>
+<div class="ltitle${done?' done':''}" style="flex:1">${t.title}</div>
+<div class="lcol"><div style="display:flex;align-items:center;gap:5px"><div class="av-sm" style="background:${av};width:18px;height:18px;font-size:8px">${t.who[0]}</div>${t.who}</div></div>
+<div class="lcol"><span style="color:${priColor(t.pri)};font-weight:500;text-transform:capitalize">${t.pri}</span></div>
+<div class="lcol">${d?`<span class="due${d.late?' late':''}">${d.t}</span>`:'-'}</div>
+<div class="lcol sm"><span class="tag" style="${tagStyle(col.name)}">${col.name}</span></div>
+</div>`;
+    });
+    h+=`</div>`;
+  });
+  h+=`</div>`;
+  return h;
+}
+
+function dashboard(){
+  const total=S.tasks.length;
+  const mine=S.tasks.filter(t=>t.who===me()).length;
+  const done=S.tasks.filter(t=>normCol(colById(t.cid)?.name||'Other')==='Done').length;
+  const overdue=S.tasks.filter(t=>t.due&&fmtDue(t.due)?.late).length;
+  const upcoming=[...S.tasks]
+    .filter(t=>t.due)
+    .sort((a,b)=>new Date(a.due)-new Date(b.due))
+    .slice(0,6);
+  return`<div class="list-view">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px">
+<div class="lg-hdr" style="border-radius:var(--radius-sm)"><span class="lg-hdr-title">Total Tasks</span><span style="font-size:16px;font-weight:700">${total}</span></div>
+<div class="lg-hdr" style="border-radius:var(--radius-sm)"><span class="lg-hdr-title">My Tasks</span><span style="font-size:16px;font-weight:700">${mine}</span></div>
+<div class="lg-hdr" style="border-radius:var(--radius-sm)"><span class="lg-hdr-title">Completed</span><span style="font-size:16px;font-weight:700">${done}</span></div>
+<div class="lg-hdr" style="border-radius:var(--radius-sm)"><span class="lg-hdr-title">Overdue</span><span style="font-size:16px;font-weight:700;color:var(--red)">${overdue}</span></div>
+</div>
+<div class="lg">
+<div class="lg-hdr"><span class="lg-hdr-title">Upcoming Deadlines</span><span style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${upcoming.length}</span></div>
+${upcoming.map(t=>{
+  const d=fmtDue(t.due);
+  const c=colById(t.cid);
+  return`<div class="lrow" data-tid="${t.id}">
+<div class="ltitle" style="flex:1">${t.title}</div>
+<div class="lcol">${t.who}</div>
+<div class="lcol"><span style="color:${priColor(t.pri)};font-weight:500;text-transform:capitalize">${t.pri}</span></div>
+<div class="lcol">${d?`<span class="due${d.late?' late':''}">${d.t}</span>`:'-'}</div>
+<div class="lcol sm"><span class="tag" style="${tagStyle(c?.name||'Other')}">${c?.name||'Other'}</span></div>
+</div>`;
+}).join('')||`<div class="lrow" style="color:var(--text3);font-size:12.5px;cursor:default">No upcoming tasks</div>`}
+</div>
+</div>`;
+}
+
+function aiStudioModal(){
+  return`<div class="overlay" id="ai-ov"><div class="modal studio-modal">
+<div class="modal-hdr"><div style="flex:1"><div style="font-size:18px;font-weight:600">AI Studio</div><div style="font-size:12px;color:var(--text3)">Prompt writing and document review</div></div><button class="mclose" id="ai-close"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1.5 1.5l8 8M9.5 1.5l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+<div class="modal-body">
+<div class="mrow">
+<div class="mfield"><div class="mlabel">Goal</div><input class="cm-input" id="ai-goal" placeholder="What do you want AI to do?"></div>
+<div class="mfield"><div class="mlabel">Style</div><input class="cm-input" id="ai-style" placeholder="Professional / friendly / technical"></div>
+<div class="mfield"><div class="mlabel">Output Format</div><input class="cm-input" id="ai-format" placeholder="Bullets, table, executive brief"></div>
+</div>
+<div class="mfield" style="margin-bottom:10px"><div class="mlabel">Extra Constraints</div><textarea class="mdesc" id="ai-notes" placeholder="Any tone, scope, or constraints?"></textarea></div>
+<div class="flex gap8" style="margin-bottom:14px"><button class="btn btn-ghost" id="ai-build">Build Prompt</button><button class="btn btn-primary" id="ai-summarize">Summarize Document</button></div>
+<div class="mfield"><div class="mlabel">Document Text</div><textarea class="mdesc" id="ai-doc" placeholder="Paste document text or upload text files below">${studioDoc}</textarea></div>
+<div class="flex aic gap8" style="margin-top:8px"><input type="file" id="ai-doc-files" multiple><button class="btn btn-ghost" id="ai-doc-import">Import Text Files</button></div>
+<div class="up-note">Supported for import: txt, md, csv, json, js/ts, html/css and other plain-text files.</div>
+<div class="divider"></div>
+<div class="mlabel" style="margin-bottom:8px">AI Output</div>
+<div class="ai-box"><div class="ai-out" id="ai-out">${studioOut||'No output yet.'}</div></div>
+</div>
+<div class="modal-foot"><button class="btn btn-ghost" id="ai-clear">Clear</button><button class="btn btn-primary" id="ai-use-prompt">Use Prompt In Task</button></div>
+</div></div>`;
+}
+
+function userModal(){
+  const u=auth.users.find(x=>x.email===profileEmail)||currentUser();
+  if(!u)return'';
+  const canEdit=isAdmin()||u.email===currentUser()?.email;
+  return`<div class="overlay" id="usr-ov"><div class="modal">
+<div class="modal-hdr"><div style="flex:1"><div style="font-size:18px;font-weight:600">User Profile</div><div style="font-size:12px;color:var(--text3)">${u.email}</div></div><button class="mclose" id="usr-close"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1.5 1.5l8 8M9.5 1.5l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+<div class="modal-body">
+<div class="mrow">
+<div class="mfield"><div class="mlabel">Name</div><input class="cm-input" id="usr-name" value="${u.name}" ${canEdit?'':'disabled'}></div>
+<div class="mfield"><div class="mlabel">Title</div><input class="cm-input" id="usr-title" value="${u.title||''}" ${canEdit?'':'disabled'}></div>
+</div>
+<div class="mrow">
+<div class="mfield"><div class="mlabel">Role</div><select class="msel" id="usr-role" ${isAdmin()?'':'disabled'}><option value="member"${u.role==='member'?' selected':''}>Member</option><option value="admin"${u.role==='admin'?' selected':''}>Admin</option></select></div>
+<div class="mfield"><div class="mlabel">Avatar Color</div><input class="cm-input" id="usr-color" value="${u.color||'#7c6af7'}" ${canEdit?'':'disabled'}></div>
+</div>
+${isAdmin()?`<div class="divider"></div>
+<div class="mlabel" style="margin-bottom:8px">Create User</div>
+<div class="mrow">
+<div class="mfield"><input class="cm-input" id="add-name" placeholder="Name"></div>
+<div class="mfield"><input class="cm-input" id="add-email" placeholder="Email"></div>
+</div>
+<div class="mrow">
+<div class="mfield"><input class="cm-input" id="add-pass" placeholder="Password"></div>
+<div class="mfield"><select class="msel" id="add-role"><option value="member">Member</option><option value="admin">Admin</option></select></div>
+</div>
+<button class="btn btn-ghost" id="add-user-btn">Add User</button>`:''}
+</div>
+<div class="modal-foot"><button class="btn btn-ghost" id="usr-cancel">Close</button>${canEdit?`<button class="btn btn-primary" id="usr-save">Save Profile</button>`:''}</div>
+</div></div>`;
+}
+
+function taskModal(){
+  const t=S.tasks.find(x=>x.id===openTid);
+  if(!t)return'';
+  ensureTaskShape(t);
+  const p=progress(t);
+  const taskCols=projCols(taskPid(t));
+  return`<div class="overlay" id="ov"><div class="modal">
+<div class="modal-hdr"><textarea class="modal-title" id="m-title" rows="2">${t.title}</textarea><button class="mclose" id="m-close"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1.5 1.5l8 8M9.5 1.5l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+<div class="modal-body">
+<div class="mrow">
+<div class="mfield"><div class="mlabel">Status</div><select class="msel" id="m-col">${taskCols.map(c=>`<option value="${c.id}"${c.id===t.cid?' selected':''}>${c.name}</option>`).join('')}</select></div>
+<div class="mfield"><div class="mlabel">Priority</div><select class="msel" id="m-pri">${['high','medium','low'].map(p=>`<option value="${p}"${p===t.pri?' selected':''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`).join('')}</select></div>
+<div class="mfield"><div class="mlabel">Assignee</div><select class="msel" id="m-who">${memberList().map(m=>`<option value="${m}"${m===t.who?' selected':''}>${m}</option>`).join('')}</select></div>
+<div class="mfield"><div class="mlabel">Due date</div><input type="date" class="msel" id="m-due" value="${t.due||''}"></div>
+</div>
+<div class="mfield" style="margin-bottom:14px"><div class="mlabel">Description</div><textarea class="mdesc" id="m-desc" placeholder="Add a description…">${t.desc||''}</textarea></div>
+<div class="mlabel" style="margin-bottom:8px">Brief Chatbot</div>
+<div class="brief-wrap">
+<div class="brief-feed" id="brief-feed">
+${(t.briefChat||[]).map(m=>`<div class="brief-msg ${m.role==='user'?'user':'bot'}">${m.text}</div>`).join('')||`<div class="brief-msg bot">Ask me to expand this brief, identify risks, or suggest better structure.</div>`}
+</div>
+<div class="cm-input-row"><input class="cm-input" id="brief-inp" placeholder="Ask about this brief..."><button class="btn btn-primary" style="padding:5px 10px;font-size:12px" id="brief-send">Ask</button></div>
+</div>
+<div class="divider"></div>
+<div class="mlabel" style="margin-bottom:8px">Attachments (Images, Videos, Docs)</div>
+<div class="flex aic gap8" style="margin-bottom:8px"><input type="file" id="m-att-files" multiple><button class="btn btn-ghost" id="m-att-add">Add Files</button></div>
+<div class="att-grid" style="margin-bottom:8px">
+${(t.atts||[]).map(a=>`<div class="att-card">
+${a.kind==='image'?`<img class="att-media" src="${a.url}" alt="${a.name}">`:a.kind==='video'?`<video class="att-media" src="${a.url}" controls></video>`:`<div class="att-doc">Document<br>${a.name}</div>`}
+<button class="att-del" data-att-del="${a.id}">x</button>
+<div class="att-name">${a.name}</div>
+</div>`).join('')||`<div class="up-note">No files attached yet.</div>`}
+</div>
+<div class="divider"></div>
+<div class="mlabel" style="margin-bottom:8px">AI Assistant</div>
+<div class="ai-box" style="margin-bottom:10px">
+<div class="mfield"><div class="mlabel">Prompt</div><textarea class="mdesc" id="m-ai-prompt" placeholder="Ask AI to summarize, critique, rewrite, or extract actions...">${t.ai?.prompt||''}</textarea></div>
+<div class="mfield" style="margin-top:8px"><div class="mlabel">Document / Notes</div><textarea class="mdesc" id="m-ai-doc" placeholder="Paste document text or upload text files">${t.ai?.doc||''}</textarea></div>
+<div class="flex aic gap8" style="margin-top:8px"><input type="file" id="m-ai-files" multiple><button class="btn btn-ghost" id="m-ai-import">Import Text Files</button><button class="btn btn-primary" id="m-ai-run">Run AI Review</button></div>
+<div class="up-note">AI works locally in-browser with extractive summaries and action detection.</div>
+<div class="divider"></div>
+<div class="ai-out" id="m-ai-out">${t.ai?.out||'No AI output yet.'}</div>
+</div>
+<div class="divider"></div>
+<div class="mlabel" style="margin-bottom:8px">Subtasks${p!==null?` <span style="color:var(--text3);font-weight:400;text-transform:none;font-size:11px">${t.subs.filter(s=>s.done).length}/${t.subs.length} done</span>`:''}</div>
+${p!==null?`<div class="prog" style="margin-bottom:10px"><div class="prog-fill" style="width:${p}%"></div></div>`:''}
+${t.subs.map(s=>`<div class="st-row"><div class="stcheck${s.done?' done':''}" data-stid="${s.id}">${s.done?`<svg width="9" height="9" viewBox="0 0 9 9" fill="none"><path d="M1.5 4.5l2 2 4-4" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`:''}</div><span style="${s.done?'text-decoration:line-through;color:var(--text3)':''}">${s.text}</span></div>`).join('')}
+<div class="add-st" id="add-st-btn"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1.5v8M1.5 5.5h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Add subtask</div>
+<div id="st-inp-row" style="display:${stInputOpen?'flex':'none'};gap:8px;align-items:center;margin-top:6px"><input id="st-inp" class="cm-input" style="flex:1" placeholder="Subtask title…"><button class="btn btn-primary" style="padding:5px 10px;font-size:12px" id="save-st-btn">Add</button></div>
+<div class="divider"></div>
+<div class="mlabel" style="margin-bottom:10px">Comments</div>
+${t.cms.map(c=>`<div class="cm-row"><div class="av" style="background:${colorForName(c.who)};width:26px;height:26px;font-size:10px;flex-shrink:0">${c.who[0]}</div><div class="cm-body"><div class="cm-author">${c.who}</div><div class="cm-text">${c.text}</div></div></div>`).join('')}
+<div class="cm-input-row"><div class="av" style="background:var(--accent);width:26px;height:26px;font-size:10px;flex-shrink:0">A</div><input class="cm-input" id="cm-inp" placeholder="Write a comment…"><button class="btn btn-primary" style="padding:5px 10px;font-size:12px" id="post-cm-btn">Post</button></div>
+</div>
+<div class="modal-foot"><button class="btn btn-danger" id="del-btn">Delete task</button><button class="btn btn-ghost" id="m-cancel">Cancel</button><button class="btn btn-primary" id="m-save">Save changes</button></div>
+</div></div>`;
+}
+
+function newModal(){
+  const modalPid=activeSection==='project'?activePid:S.projects[0]?.id;
+  const cols=projCols(modalPid);
+  const defCid=newTask.cid||cols[0]?.id||'';
+  return`<div class="overlay" id="nv"><div class="modal">
+<div class="modal-hdr"><textarea class="modal-title" id="n-title" rows="2" placeholder="Task title…">${newTask.title}</textarea><button class="mclose" id="n-close"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1.5 1.5l8 8M9.5 1.5l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+<div class="modal-body">
+<div class="mrow">
+<div class="mfield"><div class="mlabel">Column</div><select class="msel" id="n-col">${cols.map(c=>`<option value="${c.id}"${c.id===defCid?' selected':''}>${c.name}</option>`).join('')}</select></div>
+<div class="mfield"><div class="mlabel">Priority</div><select class="msel" id="n-pri">${['high','medium','low'].map(p=>`<option value="${p}"${p===newTask.pri?' selected':''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`).join('')}</select></div>
+<div class="mfield"><div class="mlabel">Assignee</div><select class="msel" id="n-who">${memberList().map(m=>`<option value="${m}"${m===newTask.who?' selected':''}>${m}</option>`).join('')}</select></div>
+<div class="mfield"><div class="mlabel">Due date</div><input type="date" class="msel" id="n-due" value="${newTask.due}"></div>
+</div>
+<div class="mfield"><div class="mlabel">Description</div><textarea class="mdesc" id="n-desc" placeholder="What needs to be done?">${newTask.desc}</textarea></div>
+</div>
+<div class="modal-foot"><button class="btn btn-ghost" id="n-cancel">Cancel</button><button class="btn btn-primary" id="n-create">Create task</button></div>
+</div></div>`;
+}
+
+function wire(){
+  if(!auth.session){
+    const setMode=(mode,note='')=>setAuth({...auth,mode,note});
+    const gl=$('goto-login');if(gl)gl.addEventListener('click',()=>{setMode('login');render()});
+    const gs=$('goto-signup');if(gs)gs.addEventListener('click',()=>{setMode('signup');render()});
+    const su=$('su-btn');
+    if(su)su.addEventListener('click',()=>{
+      const name=$('su-name').value.trim();
+      const email=$('su-email').value.trim().toLowerCase();
+      const pass=$('su-pass').value;
+      if(!name||!email||pass.length<6){setMode('signup','Please enter valid details (password minimum 6 chars).');return render();}
+      if(auth.users.some(u=>u.email===email)){setMode('signup','That email is already registered.');return render();}
+      const users=[...auth.users,{email,password:pass,name,verified:false,code:DEMO_CODE,role:'member',title:'Team Member',color:COLORS[auth.users.length%COLORS.length]}];
+      setAuth({...auth,users,pendingEmail:email,mode:'verify',note:'Account created. Check your email for verification.'});
+      toast('Verification code sent');
+      render();
+    });
+    const li=$('li-btn');
+    if(li)li.addEventListener('click',()=>{
+      const email=$('li-email').value.trim().toLowerCase();
+      const pass=$('li-pass').value;
+      const user=auth.users.find(u=>u.email===email&&u.password===pass);
+      if(!user){setMode('login','Invalid email or password.');return render();}
+      if(!user.verified){setAuth({...auth,pendingEmail:email,mode:'verify',note:'Please verify your email first.'});return render();}
+      setAuth({...auth,session:{email:user.email,name:user.name},note:''});
+      render();
+    });
+    const vf=$('vf-btn');
+    if(vf)vf.addEventListener('click',()=>{
+      const code=$('vf-code').value.trim();
+      const email=auth.pendingEmail;
+      const users=auth.users.map(u=>u.email===email&&code===u.code?{...u,verified:true,code:''}:u);
+      const verified=users.find(u=>u.email===email&&u.verified);
+      if(!verified){setAuth({...auth,mode:'verify',note:'Code is incorrect. Try again.'});return render();}
+      setAuth({...auth,users,session:{email:verified.email,name:verified.name},mode:'login',note:''});
+      render();
+    });
+    const vr=$('vf-resend');
+    if(vr)vr.addEventListener('click',()=>{
+      const users=auth.users.map(u=>u.email===auth.pendingEmail?{...u,code:DEMO_CODE}:u);
+      setAuth({...auth,users,mode:'verify',note:'New verification code sent.'});
+      toast('Verification code resent');
+      render();
+    });
+    return;
+  }
+
+  // Sidebar nav
+  qq('[data-sec]').forEach(el=>el.addEventListener('click',()=>{
+    activeSection=el.dataset.sec;
+    activeMember='';
+    if(activeSection==='dash')activeView='list';
+    render();
+  }));
+  qq('[data-pid]').forEach(el=>el.addEventListener('click',()=>{
+    activePid=el.dataset.pid;
+    activeSection='project';
+    activeMember='';
+    render();
+  }));
+  qq('[data-member]').forEach(el=>el.addEventListener('click',()=>{
+    activeMember=el.dataset.member||'';
+    activeSection='all';
+    activeView='list';
+    render();
+  }));
+  qq('[data-open-profile]').forEach(el=>el.addEventListener('click',e=>{
+    e.stopPropagation();
+    if(!isAdmin())return;
+    profileEmail=el.dataset.openProfile;
+    showUserModal=true;
+    render();
+  }));
+  // View toggle
+  qq('[data-view]').forEach(el=>el.addEventListener('click',()=>{activeView=el.dataset.view;render()}));
+  // User management
+  const usersBtn=$('users-btn');
+  if(usersBtn)usersBtn.addEventListener('click',()=>{
+    profileEmail=currentUser()?.email||'';
+    showUserModal=true;
+    render();
+  });
+  const usrClose=$('usr-close');if(usrClose)usrClose.addEventListener('click',()=>{showUserModal=false;render()});
+  const usrCancel=$('usr-cancel');if(usrCancel)usrCancel.addEventListener('click',()=>{showUserModal=false;render()});
+  const usrOv=$('usr-ov');if(usrOv)usrOv.addEventListener('click',e=>{if(e.target===usrOv){showUserModal=false;render()}});
+  const usrSave=$('usr-save');
+  if(usrSave)usrSave.addEventListener('click',()=>{
+    const target=auth.users.find(u=>u.email===profileEmail);if(!target)return;
+    const canEdit=isAdmin()||target.email===currentUser()?.email;
+    if(!canEdit)return;
+    target.name=$('usr-name').value.trim()||target.name;
+    target.title=$('usr-title').value.trim()||target.title;
+    target.color=$('usr-color').value.trim()||target.color;
+    if(isAdmin())target.role=$('usr-role').value;
+    if(auth.session?.email===target.email)auth.session.name=target.name;
+    setAuth({...auth,users:[...auth.users]});
+    toast('Profile updated');
+    showUserModal=false;
+    render();
+  });
+  const addUserBtn=$('add-user-btn');
+  if(addUserBtn)addUserBtn.addEventListener('click',()=>{
+    if(!isAdmin())return;
+    const name=$('add-name').value.trim();
+    const email=$('add-email').value.trim().toLowerCase();
+    const pass=$('add-pass').value.trim()||'demo123';
+    const role=$('add-role').value==='admin'?'admin':'member';
+    if(!name||!email){toast('Name and email are required');return;}
+    if(auth.users.some(u=>u.email===email)){toast('Email already exists');return;}
+    const users=[...auth.users,{email,password:pass,name,verified:true,code:'',role,title:'Team Member',color:COLORS[auth.users.length%COLORS.length]}];
+    setAuth({...auth,users});
+    toast(`${name} added as ${role}`);
+    render();
+  });
+  // AI Studio
+  const aiBtn=$('ai-btn');if(aiBtn)aiBtn.addEventListener('click',()=>{showAiStudio=true;render()});
+  const aiClose=$('ai-close');if(aiClose)aiClose.addEventListener('click',()=>{showAiStudio=false;render()});
+  const aiOv=$('ai-ov');if(aiOv)aiOv.addEventListener('click',e=>{if(e.target===aiOv){showAiStudio=false;render()}});
+  const aiBuild=$('ai-build');
+  if(aiBuild)aiBuild.addEventListener('click',()=>{
+    const p=aiBuildPrompt($('ai-goal').value.trim(),$('ai-style').value.trim(),$('ai-format').value.trim(),$('ai-notes').value.trim());
+    studioPrompt=p;studioOut=p;$('ai-out').textContent=studioOut;
+  });
+  const aiDocImport=$('ai-doc-import');
+  if(aiDocImport)aiDocImport.addEventListener('click',async()=>{
+    const fi=$('ai-doc-files');if(!fi?.files?.length)return;
+    const txt=await readFilesAsText(fi.files);
+    if(!txt){toast('No supported text files selected');return;}
+    $('ai-doc').value=($('ai-doc').value?$('ai-doc').value+'\n\n':'')+txt;
+    toast('Document text imported');
+  });
+  const aiSumm=$('ai-summarize');
+  if(aiSumm)aiSumm.addEventListener('click',()=>{
+    studioDoc=$('ai-doc').value;
+    const prompt=studioPrompt||aiBuildPrompt($('ai-goal').value.trim(),$('ai-style').value.trim(),$('ai-format').value.trim(),$('ai-notes').value.trim());
+    studioOut=aiSummarize(studioDoc,prompt);
+    $('ai-out').textContent=studioOut;
+  });
+  const aiClear=$('ai-clear');
+  if(aiClear)aiClear.addEventListener('click',()=>{
+    studioPrompt='';studioDoc='';studioOut='';
+    render();
+  });
+  const aiUse=$('ai-use-prompt');
+  if(aiUse)aiUse.addEventListener('click',()=>{
+    if(!openTid){toast('Open a task to use this prompt there');return;}
+    const t=S.tasks.find(x=>x.id===openTid);if(!t)return;
+    t.ai.prompt=studioPrompt||$('ai-out').textContent||'';
+    toast('Prompt copied to task AI panel');
+  });
+  // Search
+  const si=$('s-inp');
+  if(si)si.addEventListener('input',e=>{
+    const next=e.target.value;
+    clearTimeout(searchTimer);
+    searchTimer=setTimeout(()=>{search=next;render();},130);
+  });
+  const out=$('logout-row');
+  if(out)out.addEventListener('click',()=>{
+    setAuth({...auth,session:null,mode:'login',note:''});
+    openTid=null;showNewModal=false;showAiStudio=false;showUserModal=false;
+    render();
+  });
+  // New task
+  const nb=$('new-btn');if(nb)nb.addEventListener('click',()=>{
+    const pid=activeSection==='project'?activePid:S.projects[0]?.id;
+    newTask={title:'',cid:projCols(pid)[0]?.id||'',pri:'medium',who:me(),due:'',desc:''};
+    showNewModal=true;render();
+  });
+  // Add column
+  const ac=$('add-col-btn');
+  if(ac)ac.addEventListener('click',()=>{
+    const name=prompt('Column name:');if(!name)return;
+    S.columns.push({id:'c'+Date.now(),name,color:COLORS[S.columns.length%COLORS.length],pid:activePid});
+    toast('Column "'+name+'" added');render();
+  });
+  // Open task cards
+  qq('[data-tid]').forEach(el=>el.addEventListener('click',e=>{
+    if(e.target.closest('[data-lcheck]')||e.target.closest('[data-stid]'))return;
+    openTid=el.dataset.tid;
+    const t=S.tasks.find(x=>x.id===openTid);if(t)ensureTaskShape(t);
+    stInputOpen=false;render();
+  }));
+  // Add task from column
+  qq('[data-addcol]').forEach(el=>el.addEventListener('click',e=>{
+    e.stopPropagation();
+    newTask={title:'',cid:el.dataset.addcol,pri:'medium',who:me(),due:'',desc:''};
+    showNewModal=true;render();
+  }));
+  // List check
+  qq('[data-lcheck]').forEach(el=>el.addEventListener('click',e=>{
+    e.stopPropagation();
+    const t=S.tasks.find(x=>x.id===el.dataset.lcheck);if(!t)return;
+    const pid=taskPid(t);
+    const doneCols=S.columns.filter(c=>c.pid===pid&&c.name==='Done');
+    const backlog=S.columns.find(c=>c.pid===pid&&c.name==='Backlog');
+    if(doneCols.length&&t.cid!==doneCols[0].id){t.cid=doneCols[0].id;toast('Marked as done');}
+    else if(backlog){t.cid=backlog.id;toast('Moved to Backlog');}
+    render();
+  }));
+  // Task modal
+  const mc=$('m-close');if(mc)mc.addEventListener('click',()=>{openTid=null;render()});
+  const mcanc=$('m-cancel');if(mcanc)mcanc.addEventListener('click',()=>{openTid=null;render()});
+  const ov=$('ov');if(ov)ov.addEventListener('click',e=>{if(e.target===ov){openTid=null;render()}});
+  const ms=$('m-save');
+  if(ms)ms.addEventListener('click',()=>{
+    const t=S.tasks.find(x=>x.id===openTid);if(!t)return;
+    ensureTaskShape(t);
+    t.title=$('m-title').value||t.title;
+    t.cid=$('m-col').value;t.pri=$('m-pri').value;
+    t.who=$('m-who').value;t.due=$('m-due').value;
+    t.desc=$('m-desc').value;
+    t.ai.prompt=$('m-ai-prompt')?.value||'';
+    t.ai.doc=$('m-ai-doc')?.value||'';
+    t.ai.out=$('m-ai-out')?.textContent||'';
+    toast('Changes saved');openTid=null;render();
+  });
+  const del=$('del-btn');
+  if(del)del.addEventListener('click',()=>{
+    if(!confirm('Delete this task?'))return;
+    S.tasks=S.tasks.filter(x=>x.id!==openTid);
+    toast('Task deleted');openTid=null;render();
+  });
+  // Subtasks
+  qq('[data-stid]').forEach(el=>el.addEventListener('click',e=>{
+    e.stopPropagation();
+    const t=S.tasks.find(x=>x.id===openTid);if(!t)return;
+    const s=t.subs.find(x=>x.id===el.dataset.stid);if(s){s.done=!s.done;render();}
+  }));
+  const addSt=$('add-st-btn');
+  if(addSt)addSt.addEventListener('click',()=>{stInputOpen=!stInputOpen;render()});
+  const saveSt=$('save-st-btn');
+  if(saveSt)saveSt.addEventListener('click',()=>{
+    const val=$('st-inp').value.trim();if(!val)return;
+    const t=S.tasks.find(x=>x.id===openTid);if(!t)return;
+    t.subs.push({id:'s'+Date.now(),text:val,done:false});
+    stInputOpen=false;toast('Subtask added');render();
+  });
+  const stInp=$('st-inp');
+  if(stInp)stInp.addEventListener('keydown',e=>{if(e.key==='Enter'){$('save-st-btn')?.click()}});
+  // Brief chatbot
+  const briefSend=$('brief-send');
+  if(briefSend)briefSend.addEventListener('click',()=>{
+    const t=S.tasks.find(x=>x.id===openTid);if(!t)return;
+    ensureTaskShape(t);
+    t.desc=$('m-desc')?.value||t.desc;
+    const q=$('brief-inp')?.value.trim();
+    if(!q)return;
+    t.briefChat.push({role:'user',text:q,ts:Date.now()});
+    const a=briefChatReply(t,q);
+    t.briefChat.push({role:'bot',text:a,ts:Date.now()});
+    render();
+  });
+  const briefInp=$('brief-inp');
+  if(briefInp)briefInp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('brief-send')?.click()}});
+  // Attachments
+  const addAtt=$('m-att-add');
+  if(addAtt)addAtt.addEventListener('click',async()=>{
+    const t=S.tasks.find(x=>x.id===openTid);if(!t)return;
+    ensureTaskShape(t);
+    const fi=$('m-att-files');if(!fi?.files?.length)return;
+    for(const f of [...fi.files]){
+      let kind='doc';
+      if(f.type.startsWith('image/'))kind='image';
+      else if(f.type.startsWith('video/'))kind='video';
+      const url=await fileToDataUrl(f);
+      t.atts.push({id:'a'+Date.now()+Math.random().toString(36).slice(2,6),name:f.name,kind,url,size:f.size});
+    }
+    toast('Files attached');
+    render();
+  });
+  qq('[data-att-del]').forEach(el=>el.addEventListener('click',e=>{
+    e.stopPropagation();
+    const t=S.tasks.find(x=>x.id===openTid);if(!t)return;
+    t.atts=(t.atts||[]).filter(a=>a.id!==el.dataset.attDel);
+    render();
+  }));
+  // Task AI
+  const maiImp=$('m-ai-import');
+  if(maiImp)maiImp.addEventListener('click',async()=>{
+    const fi=$('m-ai-files');if(!fi?.files?.length)return;
+    const txt=await readFilesAsText(fi.files);
+    if(!txt){toast('No supported text files selected');return;}
+    const md=$('m-ai-doc');
+    md.value=(md.value?md.value+'\n\n':'')+txt;
+    toast('Task doc imported');
+  });
+  const maiRun=$('m-ai-run');
+  if(maiRun)maiRun.addEventListener('click',()=>{
+    const t=S.tasks.find(x=>x.id===openTid);if(!t)return;
+    ensureTaskShape(t);
+    const p=$('m-ai-prompt').value.trim();
+    const doc=$('m-ai-doc').value.trim()||$('m-desc').value.trim();
+    const out=aiSummarize(doc,p);
+    t.ai.prompt=p;t.ai.doc=doc;t.ai.out=out;
+    $('m-ai-out').textContent=out;
+    toast('AI review complete');
+  });
+  // Comments
+  const postCm=$('post-cm-btn');
+  if(postCm)postCm.addEventListener('click',()=>{
+    const val=$('cm-inp').value.trim();if(!val)return;
+    const t=S.tasks.find(x=>x.id===openTid);if(!t)return;
+    t.cms.push({who:me(),text:val});
+    toast('Comment posted');render();
+  });
+  const cmInp=$('cm-inp');
+  if(cmInp)cmInp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('post-cm-btn')?.click()}});
+  // New task modal
+  const nc=$('n-close');if(nc)nc.addEventListener('click',()=>{showNewModal=false;render()});
+  const ncanc=$('n-cancel');if(ncanc)ncanc.addEventListener('click',()=>{showNewModal=false;render()});
+  const nv=$('nv');if(nv)nv.addEventListener('click',e=>{if(e.target===nv){showNewModal=false;render()}});
+  const ncr=$('n-create');
+  if(ncr)ncr.addEventListener('click',()=>{
+    const title=$('n-title').value.trim();
+    if(!title){$('n-title').style.borderBottom='2px solid var(--red)';$('n-title').focus();return;}
+    S.tasks.push({id:'t'+Date.now(),title,cid:$('n-col').value,pri:$('n-pri').value,who:$('n-who').value,due:$('n-due').value,tags:[],subs:[],cms:[],desc:$('n-desc').value,atts:[],ai:{prompt:'',doc:'',out:''},briefChat:[]});
+    showNewModal=false;newTask={title:'',cid:'',pri:'medium',who:me(),due:'',desc:''};
+    toast('"'+title+'" created');render();
+  });
+  const ntInp=$('n-title');
+  if(ntInp)ntInp.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.metaKey){$('n-create')?.click()}});
+}
+
+render();
+</script>
+</body>
+</html>
