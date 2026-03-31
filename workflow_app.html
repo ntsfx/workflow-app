@@ -318,6 +318,7 @@ let studioOut='';
 let studioChat=[];
 let auth=normalizeAuth(readJSON(AUTH_KEY,mkAuth()));
 const urlInviteCode=new URLSearchParams(location.search).get('invite')||'';
+if(urlInviteCode&&!auth.session)auth.mode='signup';
 
 const snap=readJSON(APP_KEY,null);
 if(snap){
@@ -592,7 +593,7 @@ function makeInvite(email,role='member',company=currentCompany()){
       const name=base.replace(/[._-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());
       users.push({
         email:cleanEmail,
-        password:'',
+        password:null,
         name:name||'Invited Member',
         verified:false,
         otpRequired:false,
@@ -670,6 +671,7 @@ ${mode==='signup'?`
 <div class="auth-field"><label class="auth-label">Password</label><input type="password" class="auth-inp" id="su-pass" placeholder="Minimum 6 characters"></div>
 <div class="auth-field"><label class="auth-label">Company name (for new workspace)</label><input class="auth-inp" id="su-company" placeholder="Acme Marketing"></div>
 <div class="auth-field"><label class="auth-label">Invite code (optional)</label><input class="auth-inp" id="su-invite" value="${urlInviteCode}" placeholder="inv_xxxxx"></div>
+${urlInviteCode?`<div class="up-note">Invite link detected. Set your name and new password to activate your account.</div>`:''}
 <div class="up-note">No invite code? Your signup creates a new private company and you become admin.</div>
 <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="su-btn">Create account</button>
 <div class="auth-foot"><button class="auth-link" id="goto-login">Already have an account?</button></div>
@@ -1054,6 +1056,7 @@ function wire(){
       if(!name||!email||pass.length<6){setMode('signup','Please enter valid details (password minimum 6 chars).');return render();}
       const existing=auth.users.find(u=>u.email===email);
       if(existing&&!existing.invited){setMode('signup','That email is already registered.');return render();}
+      if(existing&&existing.invited&&!inviteCode){setMode('signup','Use your invite link (or paste invite code) to finish account setup.');return render();}
       let role='member';
       let company=DEFAULT_COMPANY;
       let companies=[...auth.companies];
@@ -1098,6 +1101,11 @@ function wire(){
       const email=$('li-email').value.trim().toLowerCase();
       const pass=$('li-pass').value;
       const user=auth.users.find(u=>u.email===email&&u.password===pass);
+      const invited=auth.users.find(u=>u.email===email&&u.invited);
+      if(invited){
+        setMode('signup','Finish account setup first: open your invite link and set a password.');
+        return render();
+      }
       if(!user){setMode('login','Invalid email or password.');return render();}
       setAuth({...auth,session:{email:user.email,name:user.name,company:user.company||DEFAULT_COMPANY},note:''});
       render();
@@ -1244,7 +1252,7 @@ function wire(){
     if(!email){toast('Enter an email first');return;}
     const link=makeInvite(email,role,company);
     const subject=encodeURIComponent('You are invited to WorkFlow');
-    const body=encodeURIComponent(`Join our project with this invite link:\n\n${link}\n\nRole: ${role}\nCompany: ${companyName(company)}`);
+    const body=encodeURIComponent(`You are invited to join ${companyName(company)} in WorkFlow.\n\n1) Open this invite link:\n${link}\n2) Create your account with your own password.\n3) Sign in and start collaborating.\n\nRole: ${role}`);
     location.href=`mailto:${email}?subject=${subject}&body=${body}`;
     logAudit('Invite email launched',`${email} (${role})`);
     toast('Opened email app with invite');
