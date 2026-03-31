@@ -312,8 +312,11 @@ let studioDoc='';
 let studioOut='';
 let studioChat=[];
 let auth=normalizeAuth(readJSON(AUTH_KEY,mkAuth()));
-const urlInviteCode=new URLSearchParams(location.search).get('invite')||'';
-if(urlInviteCode&&!auth.session)auth.mode='signup';
+const urlParams=new URLSearchParams(location.search);
+const urlInviteCode=urlParams.get('invite')||'';
+const urlMode=(urlParams.get('mode')||'').toLowerCase();
+const urlInviteEmail=(urlParams.get('email')||'').toLowerCase();
+if((urlInviteCode||urlMode==='signup')&&!auth.session)auth.mode='signup';
 
 const snap=readJSON(APP_KEY,null);
 if(snap){
@@ -397,6 +400,88 @@ function normalizeGroup(g){
   if(raw==='DEVELOPERS'||raw==='DEV')return 'DEVELOPERS';
   if(raw==='CRM')return 'CRM';
   return 'CRM';
+}
+function taskDescriptionTemplate(group,title=''){
+  const g=normalizeGroup(group);
+  const t=(title||'').trim()||'[Task title]';
+  if(g==='PAID MEDIA')return `Objective:
+Launch and optimize ${t}.
+
+Audience:
+- Primary audience:
+- Geo:
+
+Deliverables:
+- Campaign structure
+- Creative variants
+- Tracking links / UTMs
+
+Success metrics:
+- CPA / ROAS target:
+- CTR target:
+
+Timeline:
+- Build:
+- Launch:
+- First review:`;
+  if(g==='ORGANIC SOCIAL')return `Objective:
+Plan and publish ${t}.
+
+Channels:
+- Instagram / X / LinkedIn / TikTok
+
+Deliverables:
+- Content plan
+- Copy captions
+- Creative assets
+
+Success metrics:
+- Reach
+- Engagement rate
+- Clicks / traffic
+
+Timeline:
+- Draft:
+- Review:
+- Publish:`;
+  if(g==='DEVELOPERS')return `Objective:
+Implement ${t}.
+
+Scope:
+- In scope:
+- Out of scope:
+
+Technical details:
+- Systems touched:
+- Dependencies:
+- Risks:
+
+Definition of done:
+- Code complete
+- QA passed
+- Deployed
+
+Timeline:
+- Build:
+- QA:
+- Release:`;
+  return `Objective:
+Deliver ${t}.
+
+Context:
+- Business need:
+- Stakeholders:
+
+Deliverables:
+- 
+
+Success metrics:
+- 
+
+Timeline:
+- Start:
+- Review:
+- Completion:`;
 }
 function normCol(name){
   if(name==='Backlog'||name==='In Progress'||name==='Review'||name==='Done')return name;
@@ -603,7 +688,7 @@ function makeInvite(email,role='member',company=currentCompany()){
   }
   setAuth({...auth,users,invites:[...(auth.invites||[]),invite]});
   logAudit('Invite created',`${cleanEmail||'open link'} (${role})`);
-  return `${location.origin}${location.pathname}?invite=${code}`;
+  return `${location.origin}${location.pathname}?mode=signup&invite=${code}${cleanEmail?`&email=${encodeURIComponent(cleanEmail)}`:''}`;
 }
 function toSlug(v){
   return (v||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,24)||'workspace';
@@ -662,7 +747,7 @@ function authHtml(){
 <div class="auth-sub">${sub}</div>
 ${mode==='signup'?`
 <div class="auth-field"><label class="auth-label">Name</label><input class="auth-inp" id="su-name" placeholder="Alex Chen"></div>
-<div class="auth-field"><label class="auth-label">Email</label><input class="auth-inp" id="su-email" placeholder="alex@company.com"></div>
+<div class="auth-field"><label class="auth-label">Email</label><input class="auth-inp" id="su-email" value="${urlInviteEmail}" placeholder="alex@company.com"></div>
 <div class="auth-field"><label class="auth-label">Password</label><input type="password" class="auth-inp" id="su-pass" placeholder="Minimum 6 characters"></div>
 <div class="auth-field"><label class="auth-label">Company name (for new workspace)</label><input class="auth-inp" id="su-company" placeholder="Acme Marketing"></div>
 <div class="auth-field"><label class="auth-label">Invite code (optional)</label><input class="auth-inp" id="su-invite" value="${urlInviteCode}" placeholder="inv_xxxxx"></div>
@@ -1030,7 +1115,7 @@ function newModal(){
 <div class="mfield"><div class="mlabel">Due date</div><input type="date" class="msel" id="n-due" value="${newTask.due}"></div>
 </div>
 <div class="mfield" style="margin-bottom:10px"><div class="mlabel">Collaborators (multi-select)</div><div style="display:flex;gap:6px;flex-wrap:wrap">${memberList().map(m=>`<label class="tag" style="background:var(--surface2);color:var(--text2);cursor:pointer"><input type="checkbox" data-n-collab="${m}" style="margin-right:5px">${m}</label>`).join('')}</div></div>
-<div class="mfield"><div class="mlabel">Description</div><textarea class="mdesc" id="n-desc" placeholder="What needs to be done?">${newTask.desc}</textarea></div>
+<div class="mfield"><div class="mlabel" style="display:flex;justify-content:space-between;align-items:center">Description <button class="btn btn-ghost" id="n-template" style="padding:3px 8px;font-size:11px">Insert Template</button></div><textarea class="mdesc" id="n-desc" placeholder="What needs to be done?">${newTask.desc}</textarea></div>
 </div>
 <div class="modal-foot"><button class="btn btn-ghost" id="n-cancel">Cancel</button><button class="btn btn-primary" id="n-create">Create task</button></div>
 </div></div>`;
@@ -1330,7 +1415,8 @@ function wire(){
   // New task
   const nb=$('new-btn');if(nb)nb.addEventListener('click',()=>{
     const pid=activeSection==='project'?activePid:S.projects[0]?.id;
-    newTask={title:'',cid:projCols(pid)[0]?.id||'',pri:'medium',group:'CRM',who:me(),due:'',desc:''};
+    const group='CRM';
+    newTask={title:'',cid:projCols(pid)[0]?.id||'',pri:'medium',group,who:me(),due:'',desc:taskDescriptionTemplate(group,'')};
     showNewModal=true;render();
   });
   // Add column
@@ -1350,7 +1436,8 @@ function wire(){
   // Add task from column
   qq('[data-addcol]').forEach(el=>el.addEventListener('click',e=>{
     e.stopPropagation();
-    newTask={title:'',cid:el.dataset.addcol,pri:'medium',group:'CRM',who:me(),due:'',desc:''};
+    const group='CRM';
+    newTask={title:'',cid:el.dataset.addcol,pri:'medium',group,who:me(),due:'',desc:taskDescriptionTemplate(group,'')};
     showNewModal=true;render();
   }));
   // List check
@@ -1374,7 +1461,7 @@ function wire(){
     ensureTaskShape(t);
     t.title=$('m-title').value||t.title;
     t.cid=$('m-col').value;t.pri=$('m-pri').value;
-    t.group=$('m-group').value;
+    t.group=normalizeGroup($('m-group').value);
     t.who=$('m-who').value;t.due=$('m-due').value;
     t.collabs=[...qq('[data-m-collab]:checked')].map(x=>x.dataset.mCollab).filter(n=>n&&n!==t.who);
     t.desc=$('m-desc').value;
@@ -1484,9 +1571,23 @@ function wire(){
     if(!title){$('n-title').style.borderBottom='2px solid var(--red)';$('n-title').focus();return;}
     const owner=$('n-who').value;
     const collabs=[...qq('[data-n-collab]:checked')].map(x=>x.dataset.nCollab).filter(n=>n&&n!==owner);
-    S.tasks.push({id:'t'+Date.now(),title,cid:$('n-col').value,pri:$('n-pri').value,group:$('n-group').value,who:owner,collabs,due:$('n-due').value,tags:[],subs:[],cms:[],desc:$('n-desc').value,atts:[],ai:{prompt:'',doc:'',out:''},briefChat:[],company:currentCompany()});
+    const group=normalizeGroup($('n-group').value);
+    const rawDesc=$('n-desc').value.trim();
+    const desc=rawDesc||taskDescriptionTemplate(group,title);
+    S.tasks.push({id:'t'+Date.now(),title,cid:$('n-col').value,pri:$('n-pri').value,group,who:owner,collabs,due:$('n-due').value,tags:[],subs:[],cms:[],desc,atts:[],ai:{prompt:'',doc:'',out:''},briefChat:[],company:currentCompany()});
     showNewModal=false;newTask={title:'',cid:'',pri:'medium',group:'CRM',who:me(),due:'',desc:''};
     toast('"'+title+'" created');render();
+  });
+  const nTemplate=$('n-template');
+  if(nTemplate)nTemplate.addEventListener('click',()=>{
+    const g=normalizeGroup($('n-group')?.value||'CRM');
+    $('n-desc').value=taskDescriptionTemplate(g,$('n-title')?.value||'');
+  });
+  const nGroup=$('n-group');
+  if(nGroup)nGroup.addEventListener('change',()=>{
+    const descEl=$('n-desc');if(!descEl)return;
+    if(descEl.value.trim())return;
+    descEl.value=taskDescriptionTemplate(normalizeGroup(nGroup.value||'CRM'),$('n-title')?.value||'');
   });
   const ntInp=$('n-title');
   if(ntInp)ntInp.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.metaKey){$('n-create')?.click()}});
