@@ -247,11 +247,16 @@ const INIT={
 // State
 const APP_KEY='workflow_app_state_v4';
 const AUTH_KEY='workflow_auth_v4';
+const SB_CFG_KEY='wf_supabase_cfg_v1';
 const DEMO_CODE='246810';
-const SUPABASE_URL='PASTE_SUPABASE_URL_HERE';
-const SUPABASE_ANON_KEY='PASTE_SUPABASE_ANON_KEY_HERE';
+const SUPABASE_URL='';
+const SUPABASE_ANON_KEY='';
+const SB_COMPANIES='wf_companies';
+const SB_MEMBERS='wf_members';
+const SB_STATES='wf_states';
 let saveTimer=null;
 let searchTimer=null;
+let remoteSaveTimer=null;
 
 function readJSON(k,fallback){
   try{
@@ -271,10 +276,27 @@ function readFirstJSON(keys,fallback){
 function writeJSON(k,v){
   try{localStorage.setItem(k,JSON.stringify(v));}catch(_){}
 }
-function hasSupabaseConfig(){
-  return !!SUPABASE_URL&&!!SUPABASE_ANON_KEY&&!SUPABASE_URL.includes('PASTE_')&&!SUPABASE_ANON_KEY.includes('PASTE_');
+function getSbCfg(){
+  const cfg=readJSON(SB_CFG_KEY,{url:'',anon:''})||{};
+  return {
+    url:(cfg.url||SUPABASE_URL||'').trim(),
+    anon:(cfg.anon||SUPABASE_ANON_KEY||'').trim()
+  };
 }
-const sb=(window.supabase&&hasSupabaseConfig())?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
+let sbCfg=getSbCfg();
+function hasSupabaseConfig(){
+  return !!sbCfg.url&&!!sbCfg.anon&&!sbCfg.url.includes('PASTE_')&&!sbCfg.anon.includes('PASTE_');
+}
+let sb=null;
+function initSupabaseClient(){
+  sbCfg=getSbCfg();
+  sb=(window.supabase&&hasSupabaseConfig())?window.supabase.createClient(sbCfg.url,sbCfg.anon):null;
+}
+function setSupabaseCfg(url,anon){
+  writeJSON(SB_CFG_KEY,{url:(url||'').trim(),anon:(anon||'').trim()});
+  initSupabaseClient();
+}
+initSupabaseClient();
 async function sbSignUp(email,password,meta){
   if(!sb)return {error:{message:'Supabase not configured in code yet. Paste SUPABASE_URL and SUPABASE_ANON_KEY.'}};
   return await sb.auth.signUp({email,password,options:{data:meta||{}}});
@@ -286,6 +308,32 @@ async function sbSignIn(email,password){
 async function sbSignOut(){
   if(!sb)return;
   try{await sb.auth.signOut();}catch(_){}
+}
+async function sbEnsureCompany(companyId,name,ownerEmail){
+  if(!sb||!companyId)return;
+  await sb.from(SB_COMPANIES).upsert({
+    id:companyId,
+    name:name||companyId,
+    owner_email:(ownerEmail||'').toLowerCase()||null,
+    updated_at:new Date().toISOString()
+  },{onConflict:'id'});
+}
+async function sbUpsertMember(u){
+  if(!sb||!u?.email||!u?.company)return;
+  await sb.from(SB_MEMBERS).upsert({
+    company_id:u.company,
+    email:u.email.toLowerCase(),
+    name:u.name||u.email.split('@')[0],
+    role:u.role==='admin'?'admin':'member',
+    title:u.title||'Team Member',
+    color:u.color||'#7c6af7',
+    invited:u.invited===true,
+    updated_at:new Date().toISOString()
+  },{onConflict:'company_id,email'});
+}
+async function sbDeleteMember(companyId,email){
+  if(!sb||!companyId||!email)return;
+  await sb.from(SB_MEMBERS).delete().eq('company_id',companyId).eq('email',email.toLowerCase());
 }
 function mkAuth(){
   return {
@@ -432,16 +480,91 @@ function ensureTaskShape(t){
   t.group=normalizeGroup(t.group);
   if(!t.company)t.company=DEFAULT_COMPANY;
 }
+function extractCompanyState(companyId){
+  return {
+    projects:S.projects.filter(p=>p.company===companyId),
+    columns:S.columns.filter(c=>c.company===companyId),
+    tasks:S.tasks.filter(t=>t.company===companyId),
+    chats:(S.chats||[]).filter(c=>c.company===companyId),
+    audit:(S.audit||[]).filter(a=>a.company===companyId)
+  };
+}
+function applyCompanyState(companyId,payload){
+  if(!payload||typeof payload!=='object')return;
+  S.projects=S.projects.filter(p=>p.company!==companyId).concat(Array.isArray(payload.projects)?payload.projects:[]);
+  S.columns=S.columns.filter(c=>c.company!==companyId).concat(Array.isArray(payload.columns)?payload.columns:[]);
+  S.tasks=S.tasks.filter(t=>t.company!==companyId).concat(Array.isArray(payload.tasks)?payload.tasks:[]);
+  S.chats=(S.chats||[]).filter(c=>c.company!==companyId).concat(Array.isArray(payload.chats)?payload.chats:[]);
+  S.audit=(S.audit||[]).filter(a=>a.company!==companyId).concat(Array.isArray(payload.audit)?payload.audit:[]);
+  S.tasks.forEach(ensureTaskShape);
+}
+async function sbSaveCurrentCompany(){
+  if(!sb||!auth.session)return;
+  const company=currentCompany();
+  if(!company)return;
+  const payload=extractCompanyState(company);
+  const name=companyName(company);
+  await sbEnsureCompany(company,name,auth.session.email);
+  const members=auth.users.filter(u=>u.company===company);
+  await Promise.all(members.map(u=>sbUpsertMember(u)));
+  await sb.from(SB_STATES).upsert({
+    company_id:company,
+    payload,
+    updated_at:new Date().toISOString()
+  },{onConflict:'company_id'});
+}
+function remotePersistSoon(){
+  if(!sb||!auth.session)return;
+  clearTimeout(remoteSaveTimer);
+  remoteSaveTimer=setTimeout(()=>{sbSaveCurrentCompany().catch(()=>{});},650);
+}
+async function sbHydrateForEmail(email){
+  if(!sb||!email)return null;
+  const mail=email.toLowerCase();
+  const memRes=await sb.from(SB_MEMBERS).select('*').eq('email',mail);
+  if(memRes.error||!memRes.data?.length)return null;
+  const memberships=memRes.data;
+  const companyIds=[...new Set(memberships.map(m=>m.company_id).filter(Boolean))];
+  if(!companyIds.length)return null;
+  const compRes=await sb.from(SB_COMPANIES).select('*').in('id',companyIds);
+  const allMemRes=await sb.from(SB_MEMBERS).select('*').in('company_id',companyIds);
+  const targetCompany=auth.session?.company&&companyIds.includes(auth.session.company)?auth.session.company:companyIds[0];
+  const stateRes=await sb.from(SB_STATES).select('payload').eq('company_id',targetCompany).maybeSingle();
+  const companies=(compRes.data||[]).map(c=>({id:c.id,name:c.name||c.id}));
+  const users=(allMemRes.data||[]).map((m,i)=>({
+    email:(m.email||'').toLowerCase(),
+    password:null,
+    name:m.name||m.email?.split('@')[0]||`User${i+1}`,
+    verified:true,
+    otpRequired:false,
+    code:'',
+    role:m.role==='admin'?'admin':'member',
+    title:m.title||'Team Member',
+    color:m.color||COLORS[i%COLORS.length],
+    company:m.company_id,
+    invited:m.invited===true
+  }));
+  return {companies,users,targetCompany,payload:stateRes.data?.payload||null};
+}
+async function sbLoadCompanyState(companyId){
+  if(!sb||!companyId)return;
+  const stateRes=await sb.from(SB_STATES).select('payload').eq('company_id',companyId).maybeSingle();
+  if(!stateRes.error&&stateRes.data?.payload){
+    applyCompanyState(companyId,stateRes.data.payload);
+  }
+}
 
 function persistSoon(){
   clearTimeout(saveTimer);
   saveTimer=setTimeout(()=>{
     writeJSON(APP_KEY,{S,activePid,activeView,activeSection,search,activeMember});
+    remotePersistSoon();
   },180);
 }
 function setAuth(next){
   auth=normalizeAuth(next);
   writeJSON(AUTH_KEY,auth);
+  remotePersistSoon();
 }
 S.tasks.forEach(ensureTaskShape);
 S.projects.forEach(p=>{if(!p.company)p.company=DEFAULT_COMPANY});
@@ -750,6 +873,21 @@ function makeInvite(email,role='member',company=currentCompany()){
       });
     }
   }
+  if(sb){
+    sbEnsureCompany(company,companyName(company),auth.session?.email||'').catch(()=>{});
+    if(cleanEmail){
+      const existingUser=users.find(u=>u.email===cleanEmail);
+      sbUpsertMember({
+        email:cleanEmail,
+        name:existingUser?.name||cleanEmail.split('@')[0],
+        role,
+        title:role==='admin'?'Team Admin':'Team Member',
+        color:existingUser?.color||COLORS[0],
+        company,
+        invited:true
+      }).catch(()=>{});
+    }
+  }
   setAuth({...auth,users,invites:[...(auth.invites||[]),invite]});
   logAudit('Invite created',`${cleanEmail||'open link'} (${role})`);
   return `${location.origin}${location.pathname}?mode=signup&invite=${code}${cleanEmail?`&email=${encodeURIComponent(cleanEmail)}`:''}`;
@@ -825,7 +963,11 @@ ${urlInviteCode?`<div class="up-note">Invite link detected. Set your name and ne
 <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="li-btn">Log in</button>
 <div class="auth-foot"><button class="auth-link" id="goto-signup">Create new account</button></div>
 `}
-${!hasSupabaseConfig()?`<div class="auth-note">Configure Supabase in code first: set <b>SUPABASE_URL</b> and <b>SUPABASE_ANON_KEY</b>.</div>`:''}
+<div class="divider" style="margin:12px 0"></div>
+<div class="auth-note" style="margin-bottom:8px">Supabase Connection (${hasSupabaseConfig()?'Configured':'Not configured'})</div>
+<div class="auth-field"><label class="auth-label">Supabase URL</label><input class="auth-inp" id="sb-url" value="${sbCfg.url||''}" placeholder="https://YOUR_PROJECT_REF.supabase.co"></div>
+<div class="auth-field"><label class="auth-label">Supabase anon key</label><input class="auth-inp" id="sb-anon" value="${sbCfg.anon||''}" placeholder="eyJhbGciOi..."></div>
+<button class="btn btn-ghost" style="width:100%;justify-content:center" id="sb-save">Save Supabase settings</button>
 ${auth.note?`<div class="auth-note">${auth.note}</div>`:''}
 </div>
 </div>`;
@@ -1189,6 +1331,14 @@ function newModal(){
 function wire(){
   if(!auth.session){
     const setMode=(mode,note='')=>setAuth({...auth,mode,note});
+    const sbSave=$('sb-save');
+    if(sbSave)sbSave.addEventListener('click',()=>{
+      const url=$('sb-url')?.value.trim()||'';
+      const anon=$('sb-anon')?.value.trim()||'';
+      setSupabaseCfg(url,anon);
+      setMode(auth.mode,hasSupabaseConfig()?'Supabase saved. You can now sign up/log in.':'Please enter valid Supabase URL and anon key.');
+      render();
+    });
     const gl=$('goto-login');if(gl)gl.addEventListener('click',()=>{setMode('login');render()});
     const gs=$('goto-signup');if(gs)gs.addEventListener('click',()=>{setMode('signup');render()});
     const su=$('su-btn');
@@ -1201,8 +1351,6 @@ function wire(){
       if(!name||!email||pass.length<6){setMode('signup','Please enter valid details (password minimum 6 chars).');return render();}
       if(!hasSupabaseConfig()){setMode('signup','Set SUPABASE_URL and SUPABASE_ANON_KEY in code first.');return render();}
       const existing=auth.users.find(u=>u.email===email);
-      if(existing&&!existing.invited){setMode('signup','That email is already registered.');return render();}
-      if(existing&&existing.invited&&!inviteCode){setMode('signup','Use your invite link (or paste invite code) to finish account setup.');return render();}
       let role='member';
       let company=DEFAULT_COMPANY;
       let companies=[...auth.companies];
@@ -1222,9 +1370,14 @@ function wire(){
         activePid=projId;
       }
       const sign=await sbSignUp(email,pass,{name,role,company,companyName:companyName(company)});
-      if(sign.error){setMode('signup',sign.error.message||'Signup failed');return render();}
+      if(sign.error){
+        const msg=(sign.error.message||'Signup failed').toLowerCase();
+        if(msg.includes('already')||msg.includes('registered'))setMode('login','Account already exists. Please log in.');
+        else setMode('signup',sign.error.message||'Signup failed');
+        return render();
+      }
       let users=[...auth.users];
-      if(existing&&existing.invited){
+      if(existing){
         users=users.map(u=>u.email===email?{
           ...u,
           password:null,
@@ -1241,6 +1394,13 @@ function wire(){
         users=[...users,{email,password:null,name,verified:true,otpRequired:false,code:'',role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company,invited:false}];
       }
       const sessionUser=sign.data?.user||null;
+      await sbEnsureCompany(company,companyName(company),email).catch(()=>{});
+      await sbUpsertMember({
+        email,name,role,company,
+        title:role==='admin'?'Team Admin':'Team Member',
+        color:COLORS[users.length%COLORS.length],
+        invited:false
+      }).catch(()=>{});
       setAuth({...auth,companies,users,mode:'login',note:sign.data?.session?'Account created and signed in.':'Account created. Please log in.'});
       if(sign.data?.session&&sessionUser){
         ensureLocalAccount(email,{name,role,company,companyName:companyName(company)});
@@ -1253,14 +1413,14 @@ function wire(){
     if(li)li.addEventListener('click',async()=>{
       const email=$('li-email').value.trim().toLowerCase();
       const pass=$('li-pass').value;
-      const invited=auth.users.find(u=>u.email===email&&u.invited);
-      if(invited){
-        setMode('signup','Finish account setup first: open your invite link and set a password.');
-        return render();
-      }
       if(!hasSupabaseConfig()){setMode('login','Set SUPABASE_URL and SUPABASE_ANON_KEY in code first.');return render();}
       const sign=await sbSignIn(email,pass);
-      if(sign.error){setMode('login',sign.error.message||'Invalid email or password.');return render();}
+      if(sign.error){
+        const invited=auth.users.find(u=>u.email===email&&u.invited);
+        if(invited)setMode('signup','Finish account setup from your invite link first.');
+        else setMode('login',sign.error.message||'Invalid email or password.');
+        return render();
+      }
       const u=sign.data?.user;
       const meta=u?.user_metadata||{};
       const local=ensureLocalAccount(email,{name:meta.name||email.split('@')[0],role:meta.role||'member',company:meta.company||auth.users.find(x=>x.email===email)?.company||DEFAULT_COMPANY,companyName:meta.companyName||''});
@@ -1299,9 +1459,10 @@ function wire(){
   // View toggle
   qq('[data-view]').forEach(el=>el.addEventListener('click',()=>{activeView=el.dataset.view;render()}));
   const csw=$('company-switch');
-  if(csw)csw.addEventListener('change',()=>{
+  if(csw)csw.addEventListener('change',async()=>{
     if(!auth.session)return;
     const company=csw.value;
+    await sbLoadCompanyState(company).catch(()=>{});
     const firstProj=S.projects.find(p=>p.company===company)?.id||'';
     activePid=firstProj||activePid;
     setAuth({...auth,session:{...auth.session,company}});
@@ -1359,6 +1520,7 @@ function wire(){
       if(Array.isArray(t.collabs))t.collabs=t.collabs.filter(n=>n!==target.name);
     });
     logAudit('User removed',target.email);
+    sbDeleteMember(target.company,target.email).catch(()=>{});
     profileEmail=currentUser()?.email||'';
     setAuth({...auth,users:auth.users.filter(u=>u.email!==email)});
     toast('User removed');
@@ -1679,15 +1841,31 @@ async function initApp(){
       if(!error&&data?.session?.user){
         const su=data.session.user;
         const email=(su.email||'').toLowerCase();
-        const meta=su.user_metadata||{};
-        const local=ensureLocalAccount(email,{
-          name:meta.name||email.split('@')[0],
-          role:meta.role||'member',
-          company:meta.company||auth.users.find(u=>u.email===email)?.company||DEFAULT_COMPANY,
-          companyName:meta.companyName||''
-        });
-        if(local){
-          setAuth({...auth,session:{email,name:local.name,company:local.company},mode:'login',note:''});
+        const hydrated=await sbHydrateForEmail(email);
+        if(hydrated){
+          auth=normalizeAuth({
+            ...auth,
+            companies:hydrated.companies,
+            users:hydrated.users,
+            session:{email,name:hydrated.users.find(u=>u.email===email)?.name||email.split('@')[0],company:hydrated.targetCompany},
+            mode:'login',
+            note:''
+          });
+          writeJSON(AUTH_KEY,auth);
+          if(hydrated.payload)applyCompanyState(hydrated.targetCompany,hydrated.payload);
+        }else{
+          const meta=su.user_metadata||{};
+          const local=ensureLocalAccount(email,{
+            name:meta.name||email.split('@')[0],
+            role:meta.role||'admin',
+            company:meta.company||'',
+            companyName:meta.companyName||''
+          });
+          if(local){
+            await sbEnsureCompany(local.company,companyName(local.company),email).catch(()=>{});
+            await sbUpsertMember(local).catch(()=>{});
+            setAuth({...auth,session:{email,name:local.name,company:local.company},mode:'login',note:''});
+          }
         }
       }
     }catch(_){}
