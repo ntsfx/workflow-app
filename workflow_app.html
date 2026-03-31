@@ -203,6 +203,7 @@ radial-gradient(circle at 80% 100%,rgba(52,211,153,0.16),transparent 36%),var(--
 </head>
 <body>
 <div id="root"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
 const COLORS=['#7c6af7','#34d399','#f472b6','#60a5fa','#fbbf24','#f87171','#a78bfa'];
@@ -247,6 +248,8 @@ const INIT={
 const APP_KEY='workflow_app_state_v4';
 const AUTH_KEY='workflow_auth_v4';
 const DEMO_CODE='246810';
+const SUPABASE_URL='PASTE_SUPABASE_URL_HERE';
+const SUPABASE_ANON_KEY='PASTE_SUPABASE_ANON_KEY_HERE';
 let saveTimer=null;
 let searchTimer=null;
 
@@ -267,6 +270,22 @@ function readFirstJSON(keys,fallback){
 }
 function writeJSON(k,v){
   try{localStorage.setItem(k,JSON.stringify(v));}catch(_){}
+}
+function hasSupabaseConfig(){
+  return !!SUPABASE_URL&&!!SUPABASE_ANON_KEY&&!SUPABASE_URL.includes('PASTE_')&&!SUPABASE_ANON_KEY.includes('PASTE_');
+}
+const sb=(window.supabase&&hasSupabaseConfig())?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
+async function sbSignUp(email,password,meta){
+  if(!sb)return {error:{message:'Supabase not configured in code yet. Paste SUPABASE_URL and SUPABASE_ANON_KEY.'}};
+  return await sb.auth.signUp({email,password,options:{data:meta||{}}});
+}
+async function sbSignIn(email,password){
+  if(!sb)return {error:{message:'Supabase not configured in code yet. Paste SUPABASE_URL and SUPABASE_ANON_KEY.'}};
+  return await sb.auth.signInWithPassword({email,password});
+}
+async function sbSignOut(){
+  if(!sb)return;
+  try{await sb.auth.signOut();}catch(_){}
 }
 function mkAuth(){
   return {
@@ -351,6 +370,42 @@ const taskMembers=t=>Array.from(new Set([t.who,...(Array.isArray(t.collabs)?t.co
 const companyUsers=()=>auth.users.filter(u=>u.company===currentCompany());
 const memberList=()=>Array.from(new Set(companyUsers().map(u=>u.name).filter(Boolean)));
 const cleanWords=s=>(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>3);
+function ensureLocalAccount(email,meta={}){
+  const e=(email||'').toLowerCase().trim();
+  if(!e)return null;
+  let user=auth.users.find(u=>u.email===e);
+  let companies=[...auth.companies];
+  if(!user){
+    let company=meta.company||auth.companies[0]?.id||'';
+    if(!company){
+      const label=(meta.companyName||meta.name||e.split('@')[0]||'Team')+"'s Team";
+      company=uniqueCompanyId(label);
+      companies=[...companies,{id:company,name:label}];
+      createCompanyWorkspace(company,label);
+    }
+    user={
+      email:e,
+      password:null,
+      name:meta.name||e.split('@')[0],
+      verified:true,
+      otpRequired:false,
+      code:'',
+      role:meta.role==='admin'?'admin':'member',
+      title:meta.role==='admin'?'Team Admin':'Team Member',
+      color:COLORS[auth.users.length%COLORS.length],
+      company,
+      invited:false
+    };
+    setAuth({...auth,companies,users:[...auth.users,user]});
+    return user;
+  }
+  if(meta.name)user.name=meta.name;
+  if(meta.role==='admin'||meta.role==='member')user.role=meta.role;
+  if(meta.company)user.company=meta.company;
+  if(user.invited)user.invited=false;
+  setAuth({...auth,users:[...auth.users]});
+  return user;
+}
 
 function logAudit(action,details=''){
   S.audit.unshift({
@@ -770,6 +825,7 @@ ${urlInviteCode?`<div class="up-note">Invite link detected. Set your name and ne
 <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="li-btn">Log in</button>
 <div class="auth-foot"><button class="auth-link" id="goto-signup">Create new account</button></div>
 `}
+${!hasSupabaseConfig()?`<div class="auth-note">Configure Supabase in code first: set <b>SUPABASE_URL</b> and <b>SUPABASE_ANON_KEY</b>.</div>`:''}
 ${auth.note?`<div class="auth-note">${auth.note}</div>`:''}
 </div>
 </div>`;
@@ -1136,13 +1192,14 @@ function wire(){
     const gl=$('goto-login');if(gl)gl.addEventListener('click',()=>{setMode('login');render()});
     const gs=$('goto-signup');if(gs)gs.addEventListener('click',()=>{setMode('signup');render()});
     const su=$('su-btn');
-    if(su)su.addEventListener('click',()=>{
+    if(su)su.addEventListener('click',async()=>{
       const name=$('su-name').value.trim();
       const email=$('su-email').value.trim().toLowerCase();
       const pass=$('su-pass').value;
       const inputCompany=$('su-company')?.value.trim()||'';
       const inviteCode=$('su-invite')?.value.trim()||'';
       if(!name||!email||pass.length<6){setMode('signup','Please enter valid details (password minimum 6 chars).');return render();}
+      if(!hasSupabaseConfig()){setMode('signup','Set SUPABASE_URL and SUPABASE_ANON_KEY in code first.');return render();}
       const existing=auth.users.find(u=>u.email===email);
       if(existing&&!existing.invited){setMode('signup','That email is already registered.');return render();}
       if(existing&&existing.invited&&!inviteCode){setMode('signup','Use your invite link (or paste invite code) to finish account setup.');return render();}
@@ -1164,11 +1221,13 @@ function wire(){
         const projId=createCompanyWorkspace(company,label);
         activePid=projId;
       }
+      const sign=await sbSignUp(email,pass,{name,role,company,companyName:companyName(company)});
+      if(sign.error){setMode('signup',sign.error.message||'Signup failed');return render();}
       let users=[...auth.users];
       if(existing&&existing.invited){
         users=users.map(u=>u.email===email?{
           ...u,
-          password:pass,
+          password:null,
           name,
           verified:true,
           otpRequired:false,
@@ -1179,24 +1238,33 @@ function wire(){
           invited:false
         }:u);
       }else{
-        users=[...users,{email,password:pass,name,verified:true,otpRequired:false,code:'',role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company,invited:false}];
+        users=[...users,{email,password:null,name,verified:true,otpRequired:false,code:'',role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company,invited:false}];
       }
-      setAuth({...auth,companies,users,mode:'login',note:'Account created. You can now log in.'});
+      const sessionUser=sign.data?.user||null;
+      setAuth({...auth,companies,users,mode:'login',note:sign.data?.session?'Account created and signed in.':'Account created. Please log in.'});
+      if(sign.data?.session&&sessionUser){
+        ensureLocalAccount(email,{name,role,company,companyName:companyName(company)});
+        setAuth({...auth,companies:[...auth.companies],users:[...auth.users],session:{email,name,company},note:''});
+      }
       toast('Account created');
       render();
     });
     const li=$('li-btn');
-    if(li)li.addEventListener('click',()=>{
+    if(li)li.addEventListener('click',async()=>{
       const email=$('li-email').value.trim().toLowerCase();
       const pass=$('li-pass').value;
-      const user=auth.users.find(u=>u.email===email&&u.password===pass);
       const invited=auth.users.find(u=>u.email===email&&u.invited);
       if(invited){
         setMode('signup','Finish account setup first: open your invite link and set a password.');
         return render();
       }
-      if(!user){setMode('login','Invalid email or password.');return render();}
-      setAuth({...auth,session:{email:user.email,name:user.name,company:user.company||DEFAULT_COMPANY},note:''});
+      if(!hasSupabaseConfig()){setMode('login','Set SUPABASE_URL and SUPABASE_ANON_KEY in code first.');return render();}
+      const sign=await sbSignIn(email,pass);
+      if(sign.error){setMode('login',sign.error.message||'Invalid email or password.');return render();}
+      const u=sign.data?.user;
+      const meta=u?.user_metadata||{};
+      const local=ensureLocalAccount(email,{name:meta.name||email.split('@')[0],role:meta.role||'member',company:meta.company||auth.users.find(x=>x.email===email)?.company||DEFAULT_COMPANY,companyName:meta.companyName||''});
+      setAuth({...auth,session:{email,name:local?.name||meta.name||email.split('@')[0],company:local?.company||meta.company||DEFAULT_COMPANY},note:''});
       render();
     });
     return;
@@ -1297,19 +1365,20 @@ function wire(){
     render();
   }));
   const addUserBtn=$('add-user-btn');
-  if(addUserBtn)addUserBtn.addEventListener('click',()=>{
+  if(addUserBtn)addUserBtn.addEventListener('click',async()=>{
     if(!isAdmin())return;
     const name=$('add-name').value.trim();
     const email=$('add-email').value.trim().toLowerCase();
-    const pass=$('add-pass').value.trim()||'demo123';
     const role=$('add-role').value==='admin'?'admin':'member';
     const company=$('add-company')?.value||currentCompany();
     if(!name||!email){toast('Name and email are required');return;}
     if(auth.users.some(u=>u.email===email)){toast('Email already exists');return;}
-    const users=[...auth.users,{email,password:pass,name,verified:true,otpRequired:false,code:'',role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company,invited:false}];
+    const users=[...auth.users,{email,password:null,name,verified:false,otpRequired:false,code:'',role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company,invited:true}];
     setAuth({...auth,users});
+    const link=makeInvite(email,role,company);
     logAudit('User created',`${email} (${role})`);
-    toast(`${name} added as ${role}`);
+    try{await navigator.clipboard.writeText(link);toast(`${name} added as ${role}. Invite link copied.`);}
+    catch(_){toast(`${name} added as ${role}. Send invite link next.`);}
     render();
   });
   const invCopy=$('inv-copy');
@@ -1416,7 +1485,8 @@ function wire(){
   const chatInp=$('chat-inp');
   if(chatInp)chatInp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('chat-send')?.click()}});
   const out=$('logout-row');
-  if(out)out.addEventListener('click',()=>{
+  if(out)out.addEventListener('click',async()=>{
+    await sbSignOut();
     setAuth({...auth,session:null,mode:'login',note:''});
     openTid=null;showNewModal=false;showAiStudio=false;showUserModal=false;
     render();
@@ -1602,7 +1672,30 @@ function wire(){
   if(ntInp)ntInp.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.metaKey){$('n-create')?.click()}});
 }
 
-render();
+async function initApp(){
+  if(sb){
+    try{
+      const {data,error}=await sb.auth.getSession();
+      if(!error&&data?.session?.user){
+        const su=data.session.user;
+        const email=(su.email||'').toLowerCase();
+        const meta=su.user_metadata||{};
+        const local=ensureLocalAccount(email,{
+          name:meta.name||email.split('@')[0],
+          role:meta.role||'member',
+          company:meta.company||auth.users.find(u=>u.email===email)?.company||DEFAULT_COMPANY,
+          companyName:meta.companyName||''
+        });
+        if(local){
+          setAuth({...auth,session:{email,name:local.name,company:local.company},mode:'login',note:''});
+        }
+      }
+    }catch(_){}
+  }
+  render();
+}
+
+initApp();
 </script>
 </body>
 </html>
