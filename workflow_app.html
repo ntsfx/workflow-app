@@ -186,6 +186,19 @@ radial-gradient(circle at 80% 100%,rgba(52,211,153,0.16),transparent 36%),var(--
 .auth-foot{display:flex;justify-content:space-between;gap:8px;margin-top:4px}
 .auth-link{background:transparent;border:none;color:var(--accent2);font-size:12.5px;cursor:pointer;padding:3px 0}
 .auth-link:hover{text-decoration:underline}
+.chat-wrap{padding:18px;height:100%;display:flex;flex-direction:column;gap:10px}
+.chat-feed{flex:1;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.chat-msg{max-width:78%;padding:8px 10px;border-radius:8px;font-size:12.5px;line-height:1.4}
+.chat-msg.me{margin-left:auto;background:rgba(124,106,247,0.2);border:1px solid rgba(124,106,247,0.35)}
+.chat-msg.ot{background:var(--surface2);border:1px solid var(--border2)}
+.chat-meta{font-size:10px;color:var(--text3);margin-bottom:3px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.cal-wd{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:2px 6px}
+.cal-cell{min-height:110px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px;display:flex;flex-direction:column;gap:5px}
+.cal-cell.muted{opacity:.45}
+.cal-day{font-size:11px;color:var(--text2);font-family:'DM Mono',monospace}
+.cal-task{font-size:11px;line-height:1.3;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 6px;cursor:pointer}
+.cal-task:hover{background:var(--surface3)}
 </style>
 </head>
 <body>
@@ -194,6 +207,8 @@ radial-gradient(circle at 80% 100%,rgba(52,211,153,0.16),transparent 36%),var(--
 <script>
 const COLORS=['#7c6af7','#34d399','#f472b6','#60a5fa','#fbbf24','#f87171','#a78bfa'];
 const AVATARS={Alex:'#7c6af7',Sam:'#34d399',Jordan:'#f472b6',Casey:'#60a5fa',Morgan:'#fbbf24'};
+const TASK_GROUPS=['CRM','Paid Media','Developers','Copy','SEO','Affiliate','Content','Analytics','Design','Compliance'];
+const DEFAULT_COMPANY='company-a';
 
 const INIT={
   projects:[
@@ -231,6 +246,7 @@ const INIT={
 // State
 const APP_KEY='workflow_app_state_v3';
 const AUTH_KEY='workflow_auth_v1';
+const OTP_CFG_KEY='workflow_otp_cfg_v1';
 const DEMO_CODE='246810';
 let saveTimer=null;
 let searchTimer=null;
@@ -244,15 +260,72 @@ function readJSON(k,fallback){
 function writeJSON(k,v){
   try{localStorage.setItem(k,JSON.stringify(v));}catch(_){}
 }
+function mkOtpCfg(){
+  return {provider:'supabase',url:'',anonKey:''};
+}
+function normalizeOtpCfg(v){
+  const cfg=v&&typeof v==='object'?v:{};
+  return {
+    provider:'supabase',
+    url:(cfg.url||'').trim().replace(/\/+$/,''),
+    anonKey:(cfg.anonKey||'').trim()
+  };
+}
+function hasRealOtpCfg(){
+  return otpCfg.provider==='supabase'&&!!otpCfg.url&&!!otpCfg.anonKey;
+}
+async function sendRealOtp(email){
+  if(!hasRealOtpCfg())return {ok:false,msg:'Real OTP not configured yet. Save Supabase URL + anon key first.'};
+  try{
+    const res=await fetch(`${otpCfg.url}/auth/v1/otp`,{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        apikey:otpCfg.anonKey,
+        Authorization:`Bearer ${otpCfg.anonKey}`
+      },
+      body:JSON.stringify({email,create_user:true})
+    });
+    if(!res.ok){
+      const err=await res.text();
+      return {ok:false,msg:`OTP send failed (${res.status}). ${err.slice(0,120)}`};
+    }
+    return {ok:true,msg:'OTP sent to your email.'};
+  }catch(_){
+    return {ok:false,msg:'Could not reach Supabase. Check URL/key and internet access.'};
+  }
+}
+async function verifyRealOtp(email,token){
+  if(!hasRealOtpCfg())return {ok:false,msg:'Real OTP not configured yet. Save Supabase URL + anon key first.'};
+  try{
+    const res=await fetch(`${otpCfg.url}/auth/v1/verify`,{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        apikey:otpCfg.anonKey,
+        Authorization:`Bearer ${otpCfg.anonKey}`
+      },
+      body:JSON.stringify({email,token,type:'email'})
+    });
+    if(!res.ok){
+      const err=await res.text();
+      return {ok:false,msg:`Code verification failed (${res.status}). ${err.slice(0,120)}`};
+    }
+    return {ok:true,msg:'Email verified.'};
+  }catch(_){
+    return {ok:false,msg:'Could not reach Supabase. Check URL/key and internet access.'};
+  }
+}
 function mkAuth(){
   return {
-    users:[
-      {email:'alex@workflow.dev',password:'demo123',name:'Alex',verified:true,code:'',role:'admin',title:'Product Designer',color:'#7c6af7'},
-      {email:'sam@workflow.dev',password:'demo123',name:'Sam',verified:true,code:'',role:'member',title:'Data Analyst',color:'#34d399'},
-      {email:'jordan@workflow.dev',password:'demo123',name:'Jordan',verified:true,code:'',role:'member',title:'UI Designer',color:'#f472b6'},
-      {email:'casey@workflow.dev',password:'demo123',name:'Casey',verified:true,code:'',role:'member',title:'Engineer',color:'#60a5fa'},
-      {email:'morgan@workflow.dev',password:'demo123',name:'Morgan',verified:true,code:'',role:'member',title:'Strategist',color:'#fbbf24'}
+    companies:[
+      {id:'company-a',name:'Company A'},
+      {id:'company-b',name:'Company B'}
     ],
+    users:[
+      {email:'admin@workflow.dev',password:'demo123',name:'Admin',verified:false,otpRequired:true,code:DEMO_CODE,role:'admin',title:'Team Admin',color:'#7c6af7',company:DEFAULT_COMPANY}
+    ],
+    invites:[],
     session:null,
     pendingEmail:'',
     mode:'login',
@@ -261,17 +334,25 @@ function mkAuth(){
 }
 function normalizeAuth(a){
   if(!a||!Array.isArray(a.users))return mkAuth();
-  const users=a.users.map((u,i)=>({
-    email:(u.email||`user${i}@workflow.dev`).toLowerCase(),
-    password:u.password||'demo123',
-    name:u.name||`User ${i+1}`,
-    verified:u.verified!==false,
-    code:u.code||'',
-    role:u.role==='admin'?'admin':'member',
-    title:u.title||'Team Member',
-    color:u.color||COLORS[i%COLORS.length]
-  }));
-  return {...a,users,mode:a.mode||'login',note:a.note||'',pendingEmail:a.pendingEmail||'',session:a.session||null};
+  const companies=(Array.isArray(a.companies)&&a.companies.length)?a.companies:[{id:DEFAULT_COMPANY,name:'Company A'}];
+  let users=a.users
+    .filter(u=>u&&typeof u.email==='string'&&u.email.trim()&&typeof u.name==='string'&&u.name.trim())
+    .map((u,i)=>({
+      email:u.email.toLowerCase().trim(),
+      password:u.password||'demo123',
+      name:u.name.trim(),
+      verified:u.verified===true,
+      otpRequired:u.otpRequired!==false,
+      code:u.code||DEMO_CODE,
+      role:u.role==='admin'?'admin':'member',
+      title:u.title||'Team Member',
+      color:u.color||COLORS[i%COLORS.length],
+      company:u.company||DEFAULT_COMPANY
+    }));
+  if(!users.length)users=mkAuth().users;
+  const invites=Array.isArray(a.invites)?a.invites:[];
+  const session=a.session?{...a.session,company:a.session.company||users.find(u=>u.email===a.session.email)?.company||DEFAULT_COMPANY}:null;
+  return {...a,companies,users,invites,mode:a.mode||'login',note:a.note||'',pendingEmail:a.pendingEmail||'',session};
 }
 
 let S=JSON.parse(JSON.stringify(INIT));
@@ -286,11 +367,14 @@ let showAiStudio=false;
 let showUserModal=false;
 let profileEmail='';
 let stInputOpen=false;
-let newTask={title:'',cid:'',pri:'medium',who:'Alex',due:'',desc:''};
+let newTask={title:'',cid:'',pri:'medium',group:'CRM',who:'Alex',due:'',desc:''};
 let studioPrompt='';
 let studioDoc='';
 let studioOut='';
+let adminStepUntil=0;
 let auth=normalizeAuth(readJSON(AUTH_KEY,mkAuth()));
+let otpCfg=normalizeOtpCfg(readJSON(OTP_CFG_KEY,mkOtpCfg()));
+const urlInviteCode=new URLSearchParams(location.search).get('invite')||'';
 
 const snap=readJSON(APP_KEY,null);
 if(snap){
@@ -307,11 +391,48 @@ if(!auth||!Array.isArray(auth.users))auth=mkAuth();
 const $=id=>document.getElementById(id);
 const qq=sel=>document.querySelectorAll(sel);
 const currentUser=()=>auth.users.find(u=>u.email===auth?.session?.email)||null;
+const currentCompany=()=>auth?.session?.company||currentUser()?.company||DEFAULT_COMPANY;
+const companyName=id=>auth.companies.find(c=>c.id===id)?.name||id;
 const me=()=>currentUser()?.name||auth?.session?.name||'Alex';
 const isAdmin=()=>currentUser()?.role==='admin';
 const colorForName=name=>AVATARS[name]||auth.users.find(u=>u.name===name)?.color||COLORS[(name?.charCodeAt(0)||0)%COLORS.length];
-const memberList=()=>Array.from(new Set([...auth.users.map(u=>u.name),...S.tasks.map(t=>t.who)]));
+const taskMembers=t=>Array.from(new Set([t.who,...(Array.isArray(t.collabs)?t.collabs:[])]));
+const companyUsers=()=>auth.users.filter(u=>u.company===currentCompany());
+const memberList=()=>Array.from(new Set(companyUsers().map(u=>u.name).filter(Boolean)));
 const cleanWords=s=>(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>3);
+const adminStepFresh=()=>adminStepUntil>Date.now();
+
+function logAudit(action,details=''){
+  S.audit.unshift({
+    id:'a'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    company:currentCompany(),
+    by:me(),
+    action,
+    details,
+    ts:Date.now()
+  });
+  if(S.audit.length>300)S.audit=S.audit.slice(0,300);
+}
+async function ensureAdminStepVerified(inputId='admin-action-otp'){
+  if(adminStepFresh())return true;
+  const email=currentUser()?.email||'';
+  if(!email){toast('Could not identify current admin email');return false;}
+  const code=($(inputId)?.value||'').trim();
+  if(!code){toast('Enter admin step-up OTP first');return false;}
+  const res=await verifyRealOtp(email,code);
+  if(!res.ok){toast(res.msg||'Admin OTP verification failed');return false;}
+  adminStepUntil=Date.now()+(10*60*1000);
+  const inp=$(inputId);if(inp)inp.value='';
+  toast('Admin step-up verified for 10 minutes');
+  return true;
+}
+async function sendAdminStepOtp(){
+  const email=currentUser()?.email||'';
+  if(!email){toast('Could not identify current admin email');return;}
+  const res=await sendRealOtp(email);
+  if(!res.ok){toast(res.msg||'Could not send admin OTP');return;}
+  toast('Admin OTP sent to your email');
+}
 
 function ensureTaskShape(t){
   if(!Array.isArray(t.atts))t.atts=[];
@@ -320,6 +441,10 @@ function ensureTaskShape(t){
   if(typeof t.ai.doc!=='string')t.ai.doc='';
   if(typeof t.ai.out!=='string')t.ai.out='';
   if(!Array.isArray(t.briefChat))t.briefChat=[];
+  if(!Array.isArray(t.collabs))t.collabs=[];
+  t.collabs=t.collabs.filter(n=>n&&n!==t.who);
+  if(!t.group)t.group='CRM';
+  if(!t.company)t.company=DEFAULT_COMPANY;
 }
 
 function persistSoon(){
@@ -332,11 +457,22 @@ function setAuth(next){
   auth=normalizeAuth(next);
   writeJSON(AUTH_KEY,auth);
 }
+function setOtpCfg(next){
+  otpCfg=normalizeOtpCfg(next);
+  writeJSON(OTP_CFG_KEY,otpCfg);
+}
 S.tasks.forEach(ensureTaskShape);
+S.projects.forEach(p=>{if(!p.company)p.company=DEFAULT_COMPANY});
+S.columns.forEach(c=>{if(!c.company)c.company=S.projects.find(p=>p.id===c.pid)?.company||DEFAULT_COMPANY});
+if(!Array.isArray(S.chats))S.chats=[];
+S.chats.forEach(m=>{if(!m.company)m.company=DEFAULT_COMPANY});
+if(!Array.isArray(S.audit))S.audit=[];
+S.audit.forEach(a=>{if(!a.company)a.company=DEFAULT_COMPANY});
 
-function projCols(pid){return S.columns.filter(c=>c.pid===pid)}
-function colTasks(cid){return S.tasks.filter(t=>t.cid===cid)}
-function projTasks(pid){const ids=projCols(pid).map(c=>c.id);return S.tasks.filter(t=>ids.includes(t.cid))}
+function companyProjects(){return S.projects.filter(p=>p.company===currentCompany())}
+function projCols(pid){return S.columns.filter(c=>c.pid===pid&&c.company===currentCompany())}
+function colTasks(cid){return S.tasks.filter(t=>t.cid===cid&&t.company===currentCompany())}
+function projTasks(pid){const ids=projCols(pid).map(c=>c.id);return S.tasks.filter(t=>ids.includes(t.cid)&&t.company===currentCompany())}
 function colById(cid){return S.columns.find(c=>c.id===cid)||null}
 function taskPid(task){return colById(task.cid)?.pid||activePid}
 function normCol(name){
@@ -344,13 +480,14 @@ function normCol(name){
   return 'Other';
 }
 function makeScopedColumns(section){
-  const byMember=t=>!activeMember||t.who===activeMember;
+  const byMember=t=>!activeMember||taskMembers(t).includes(activeMember);
   if(section==='project'){
     return projCols(activePid).map(c=>({...c,tasks:colTasks(c.id).filter(byMember)}));
   }
   const scoped=S.tasks.filter(t=>{
+    if(t.company!==currentCompany())return false;
     if(!byMember(t))return false;
-    if(section==='my')return t.who===me();
+    if(section==='my')return taskMembers(t).includes(me());
     if(section==='inbox'){
       const c=colById(t.cid);
       return c&&c.name!=='Done';
@@ -376,6 +513,9 @@ function priColor(p){return p==='high'?'var(--red)':p==='medium'?'var(--amber)':
 function tagStyle(tag){
   const m={Design:'var(--pink)',Dev:'var(--blue)',Research:'var(--accent2)',Content:'var(--green)',Admin:'var(--text2)',UI:'var(--pink)',Infra:'var(--amber)',Strategy:'var(--amber)'};
   const c=m[tag]||'var(--text2)';return`color:${c};background:${c}22`;
+}
+function memberAvatars(names,size=20){
+  return `<div style="display:flex;align-items:center">${names.map((n,i)=>`<div class="av-sm" style="background:${colorForName(n)};width:${size}px;height:${size}px;font-size:${Math.max(8,Math.floor(size*0.42))}px;margin-left:${i?'-6px':'0'};border:1px solid var(--surface)">${n[0]}</div>`).join('')}</div>`;
 }
 function fmtDue(d){
   if(!d)return null;
@@ -445,6 +585,35 @@ function fileToDataUrl(file){
     fr.readAsDataURL(file);
   });
 }
+function makeInvite(email,role='member',company=currentCompany()){
+  const code='inv_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+  const invite={email:(email||'').toLowerCase(),role,company,code,createdAt:Date.now(),createdBy:me()};
+  setAuth({...auth,invites:[...(auth.invites||[]),invite]});
+  return `${location.origin}${location.pathname}?invite=${code}`;
+}
+function toSlug(v){
+  return (v||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,24)||'workspace';
+}
+function uniqueCompanyId(name){
+  let id='company-'+toSlug(name);
+  if(!auth.companies.some(c=>c.id===id))return id;
+  return `${id}-${Date.now().toString(36).slice(-4)}`;
+}
+function createCompanyWorkspace(companyId,companyLabel){
+  const projectId='p_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  const c1='c_'+Math.random().toString(36).slice(2,8);
+  const c2='c_'+Math.random().toString(36).slice(2,8);
+  const c3='c_'+Math.random().toString(36).slice(2,8);
+  const c4='c_'+Math.random().toString(36).slice(2,8);
+  S.projects.push({id:projectId,name:`${companyLabel} Workspace`,color:'#7c6af7',company:companyId});
+  S.columns.push(
+    {id:c1,name:'Backlog',color:'#5a5a72',pid:projectId},
+    {id:c2,name:'In Progress',color:'#60a5fa',pid:projectId},
+    {id:c3,name:'Review',color:'#fbbf24',pid:projectId},
+    {id:c4,name:'Done',color:'#34d399',pid:projectId}
+  );
+  return projectId;
+}
 
 // Render
 function render(){
@@ -456,9 +625,12 @@ function render(){
 function html(){
   if(!auth.session)return authHtml();
   const showDash=activeSection==='dash';
+  const showCal=activeSection==='cal';
+  const showChat=activeSection==='chat';
+  if(!companyProjects().some(p=>p.id===activePid))activePid=companyProjects()[0]?.id||'';
   return`<div class="sidebar">${sidebar()}</div>
 <div class="main">${topbar()}
-<div class="content" id="content">${showDash?dashboard():(activeView==='board'?board():list())}</div>
+<div class="content" id="content">${showChat?teamChatView():(showCal?calendarView():(showDash?dashboard():(activeView==='board'?board():list())))}</div>
 </div>
 ${openTid?taskModal():''}
 ${showNewModal?newModal():''}
@@ -470,6 +642,7 @@ function authHtml(){
   const mode=auth.mode||'login';
   const title=mode==='signup'?'Create account':mode==='verify'?'Verify email':'Welcome back';
   const sub=mode==='verify'?'Enter the 6-digit code sent to your email.':'Manage your projects with one secure workspace.';
+  const otpReady=hasRealOtpCfg();
   return`<div class="auth-wrap">
 <div class="auth-card">
 <div class="auth-title">${title}</div>
@@ -478,33 +651,43 @@ ${mode==='signup'?`
 <div class="auth-field"><label class="auth-label">Name</label><input class="auth-inp" id="su-name" placeholder="Alex Chen"></div>
 <div class="auth-field"><label class="auth-label">Email</label><input class="auth-inp" id="su-email" placeholder="alex@company.com"></div>
 <div class="auth-field"><label class="auth-label">Password</label><input type="password" class="auth-inp" id="su-pass" placeholder="Minimum 6 characters"></div>
+<div class="auth-field"><label class="auth-label">Company name (for new workspace)</label><input class="auth-inp" id="su-company" placeholder="Acme Marketing"></div>
+<div class="auth-field"><label class="auth-label">Invite code (optional)</label><input class="auth-inp" id="su-invite" value="${urlInviteCode}" placeholder="inv_xxxxx"></div>
+<div class="up-note">No invite code? Your signup creates a new private company and you become admin.</div>
 <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="su-btn">Create account</button>
 <div class="auth-foot"><button class="auth-link" id="goto-login">Already have an account?</button></div>
 `:mode==='verify'?`
-<div class="auth-note">Verification email sent to <b>${auth.pendingEmail||'your inbox'}</b>. In demo mode, code is <b>${DEMO_CODE}</b>.</div>
+<div class="auth-note">Verification email sent to <b>${auth.pendingEmail||'your inbox'}</b>. ${otpReady?'Enter the real OTP from your inbox.':'Configure Supabase below to enable real OTP.'}</div>
 <div class="auth-field"><label class="auth-label">Verification code</label><input class="auth-inp" id="vf-code" placeholder="6-digit code"></div>
 <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="vf-btn">Verify email</button>
 <div class="auth-foot"><button class="auth-link" id="vf-resend">Resend code</button><button class="auth-link" id="goto-login">Back to login</button></div>
 `:`
-<div class="auth-field"><label class="auth-label">Email</label><input class="auth-inp" id="li-email" placeholder="alex@workflow.dev"></div>
+<div class="auth-field"><label class="auth-label">Email</label><input class="auth-inp" id="li-email" placeholder="admin@workflow.dev"></div>
 <div class="auth-field"><label class="auth-label">Password</label><input type="password" class="auth-inp" id="li-pass" placeholder="demo123"></div>
 <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:2px" id="li-btn">Log in</button>
 <div class="auth-foot"><button class="auth-link" id="goto-signup">Create new account</button></div>
 `}
+<div class="divider" style="margin:12px 0"></div>
+<div class="auth-note" style="margin-bottom:8px">Real OTP Provider: Supabase (${otpReady?'Configured':'Not configured'})</div>
+<div class="auth-field"><label class="auth-label">Supabase URL</label><input class="auth-inp" id="otp-url" value="${otpCfg.url||''}" placeholder="https://YOUR-PROJECT.supabase.co"></div>
+<div class="auth-field"><label class="auth-label">Supabase anon key</label><input class="auth-inp" id="otp-key" value="${otpCfg.anonKey||''}" placeholder="eyJhbGciOi..."></div>
+<button class="btn btn-ghost" style="width:100%;justify-content:center" id="otp-save">Save OTP settings</button>
 ${auth.note?`<div class="auth-note">${auth.note}</div>`:''}
 </div>
 </div>`;
 }
 
 function sidebar(){
-  const myCount=S.tasks.filter(t=>t.who===me()).length;
-  const allCount=S.tasks.length;
+  const myCount=S.tasks.filter(t=>t.company===currentCompany()&&taskMembers(t).includes(me())).length;
+  const allCount=S.tasks.filter(t=>t.company===currentCompany()).length;
   const mems=memberList();
   const navItems=[
     {id:'inbox',label:'Inbox',badge:3,icon:'<path d="M2 10l2-6h8l2 6v3H2v-3z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><path d="M2 10h4l1 2h2l1-2h4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>'},
     {id:'my',label:'My Tasks',badge:myCount,icon:'<circle cx="8" cy="6" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M2 15c0-3.3 2.7-5 6-5s6 1.7 6 5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/>'},
     {id:'all',label:'All Tasks',badge:allCount,icon:'<rect x="2" y="2" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" fill="none"/><rect x="9" y="2" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" fill="none"/><rect x="2" y="9" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" fill="none"/><rect x="9" y="9" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" fill="none"/>'},
     {id:'dash',label:'Dashboard',badge:null,icon:'<rect x="2" y="9" width="3" height="5" rx="1" fill="currentColor" opacity=".45"/><rect x="6.5" y="5.5" width="3" height="8.5" rx="1" fill="currentColor" opacity=".65"/><rect x="11" y="2" width="3" height="12" rx="1" fill="currentColor"/>'},
+    {id:'cal',label:'Calendar',badge:null,icon:'<rect x="2" y="3" width="12" height="11" rx="2" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M2 6h12M5 2v3M11 2v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'},
+    {id:'chat',label:'Team Chat',badge:null,icon:'<path d="M2 3.5h12v7H6l-3 3v-3H2v-7z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/>'},
   ];
   let h=`<div class="logo"><div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M3 8h4V4H3v4zm0 4h4v-2H3v2zm6 0h4V8h-4v4zm0-8v2h4V4h-4z"/></svg></div><span class="logo-text">WorkFlow</span></div>`;
   h+=`<div style="padding:8px 8px 0">`;
@@ -513,7 +696,7 @@ function sidebar(){
     h+=`<div class="sb-item ${a}" data-sec="${n.id}"><svg class="ic" viewBox="0 0 16 16">${n.icon}</svg>${n.label}${n.badge!=null?`<span class="sb-badge">${n.badge}</span>`:''}</div>`;
   });
   h+=`</div><div class="sb-section" style="margin-top:8px">Projects</div><div style="padding:0 8px">`;
-  S.projects.forEach(p=>{
+  companyProjects().forEach(p=>{
     const a=activePid===p.id&&activeSection==='project'?'active':'';
     const cnt=projTasks(p.id).length;
     h+=`<div class="sb-item ${a}" data-pid="${p.id}"><div class="pdot" style="background:${p.color}"></div>${p.name}<span class="sb-badge">${cnt}</span></div>`;
@@ -529,12 +712,13 @@ function sidebar(){
 }
 
 function topbar(){
-  const proj=S.projects.find(p=>p.id===activePid);
-  const titles={inbox:'Inbox',my:'My Tasks',all:'All Tasks',dash:'Dashboard',project:proj?.name||'Tasks'};
+  const proj=companyProjects().find(p=>p.id===activePid);
+  const titles={inbox:'Inbox',my:'My Tasks',all:'All Tasks',dash:'Dashboard',cal:'Calendar',chat:'Team Chat',project:proj?.name||'Tasks'};
   const title=(titles[activeSection]||'Tasks')+(activeMember?` • ${activeMember}`:'');
-  const showViews=activeSection!=='dash';
+  const showViews=!['dash','cal','chat'].includes(activeSection);
   return`<div class="topbar">
-<div class="topbar-title">${title}</div>
+<div class="topbar-title">${title} <span style="font-size:12px;color:var(--text3);font-weight:500">• ${companyName(currentCompany())}</span></div>
+${isAdmin()?`<select id="company-switch" class="msel" style="width:170px;padding:6px 9px">${auth.companies.map(c=>`<option value="${c.id}"${c.id===currentCompany()?' selected':''}>${c.name}</option>`).join('')}</select>`:''}
 <div class="search-wrap"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="color:var(--text3)"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5l2.5 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><input id="s-inp" placeholder="Search tasks…" value="${search}"></div>
 ${showViews?`<div class="view-tabs"><div class="v-tab ${activeView==='board'?'active':''}" data-view="board">Board</div><div class="v-tab ${activeView==='list'?'active':''}" data-view="list">List</div></div>`:''}
 ${isAdmin()?`<button class="btn btn-ghost" id="users-btn">Users</button>`:''}
@@ -557,12 +741,12 @@ function board(){
     tasks.forEach(t=>{
       const p=progress(t);
       const d=t.due?fmtDue(t.due):null;
-      const av=colorForName(t.who);
+      const mems=taskMembers(t);
       h+=`<div class="card" data-tid="${t.id}">
 <div class="card-title">${t.title}</div>
-<div class="card-meta"><div class="pdot-sm" style="background:${priColor(t.pri)}" title="${t.pri} priority"></div>${t.tags.map(g=>`<span class="tag" style="${tagStyle(g)}">${g}</span>`).join('')}</div>
+<div class="card-meta"><div class="pdot-sm" style="background:${priColor(t.pri)}" title="${t.pri} priority"></div><span class="tag" style="${tagStyle(t.group||'CRM')}">${t.group||'CRM'}</span>${t.tags.map(g=>`<span class="tag" style="${tagStyle(g)}">${g}</span>`).join('')}</div>
 ${p!==null?`<div class="prog"><div class="prog-fill" style="width:${p}%"></div></div>`:''}
-<div class="card-foot"><div class="av-sm" style="background:${av}" title="${t.who}">${t.who[0]}</div>${d?`<span class="due${d.late?' late':''}">${d.t}</span>`:''}</div>
+<div class="card-foot">${memberAvatars(mems,20)}${d?`<span class="due${d.late?' late':''}">${d.t}</span>`:''}</div>
 </div>`;
     });
     h+=`</div>${activeSection==='project'?`<div class="add-card" data-addcol="${col.id}"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1.5v8M1.5 5.5h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Add task</div>`:''}</div>`;
@@ -582,15 +766,15 @@ function list(){
     h+=`<div class="lg"><div class="lg-hdr"><div class="pdot" style="background:${col.color}"></div><span class="lg-hdr-title">${col.name}</span><span style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${tasks.length}</span></div>`;
     if(tasks.length===0){h+=`<div class="lrow" style="color:var(--text3);font-size:12.5px;cursor:default">No tasks</div>`;}
     tasks.forEach(t=>{
-      const av=colorForName(t.who);
+      const mems=taskMembers(t);
       const d=t.due?fmtDue(t.due):null;
       h+=`<div class="lrow" data-tid="${t.id}">
 <div class="lcheck${done?' done':''}" data-lcheck="${t.id}">${done?`<svg width="9" height="9" viewBox="0 0 9 9" fill="none"><path d="M1.5 4.5l2 2 4-4" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`:''}</div>
 <div class="ltitle${done?' done':''}" style="flex:1">${t.title}</div>
-<div class="lcol"><div style="display:flex;align-items:center;gap:5px"><div class="av-sm" style="background:${av};width:18px;height:18px;font-size:8px">${t.who[0]}</div>${t.who}</div></div>
+<div class="lcol"><div style="display:flex;align-items:center;gap:5px">${memberAvatars(mems,18)}<span>${mems.join(', ')}</span></div></div>
 <div class="lcol"><span style="color:${priColor(t.pri)};font-weight:500;text-transform:capitalize">${t.pri}</span></div>
 <div class="lcol">${d?`<span class="due${d.late?' late':''}">${d.t}</span>`:'-'}</div>
-<div class="lcol sm"><span class="tag" style="${tagStyle(col.name)}">${col.name}</span></div>
+<div class="lcol sm"><span class="tag" style="${tagStyle(t.group||'CRM')}">${t.group||'CRM'}</span></div>
 </div>`;
     });
     h+=`</div>`;
@@ -600,11 +784,14 @@ function list(){
 }
 
 function dashboard(){
-  const total=S.tasks.length;
-  const mine=S.tasks.filter(t=>t.who===me()).length;
-  const done=S.tasks.filter(t=>normCol(colById(t.cid)?.name||'Other')==='Done').length;
-  const overdue=S.tasks.filter(t=>t.due&&fmtDue(t.due)?.late).length;
+  const scoped=S.tasks.filter(t=>t.company===currentCompany());
+  const audits=(S.audit||[]).filter(a=>a.company===currentCompany()).slice(0,6);
+  const total=scoped.length;
+  const mine=scoped.filter(t=>taskMembers(t).includes(me())).length;
+  const done=scoped.filter(t=>normCol(colById(t.cid)?.name||'Other')==='Done').length;
+  const overdue=scoped.filter(t=>t.due&&fmtDue(t.due)?.late).length;
   const upcoming=[...S.tasks]
+    .filter(t=>t.company===currentCompany())
     .filter(t=>t.due)
     .sort((a,b)=>new Date(a.due)-new Date(b.due))
     .slice(0,6);
@@ -622,13 +809,53 @@ ${upcoming.map(t=>{
   const c=colById(t.cid);
   return`<div class="lrow" data-tid="${t.id}">
 <div class="ltitle" style="flex:1">${t.title}</div>
-<div class="lcol">${t.who}</div>
+<div class="lcol">${taskMembers(t).join(', ')}</div>
 <div class="lcol"><span style="color:${priColor(t.pri)};font-weight:500;text-transform:capitalize">${t.pri}</span></div>
 <div class="lcol">${d?`<span class="due${d.late?' late':''}">${d.t}</span>`:'-'}</div>
 <div class="lcol sm"><span class="tag" style="${tagStyle(c?.name||'Other')}">${c?.name||'Other'}</span></div>
 </div>`;
 }).join('')||`<div class="lrow" style="color:var(--text3);font-size:12.5px;cursor:default">No upcoming tasks</div>`}
 </div>
+<div class="lg">
+<div class="lg-hdr"><span class="lg-hdr-title">Recent Security Activity</span><span style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${audits.length}</span></div>
+${audits.map(a=>`<div class="lrow" style="cursor:default">
+<div class="ltitle" style="flex:1">${a.action}</div>
+<div class="lcol">${a.by}</div>
+<div class="lcol">${new Date(a.ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
+<div class="lcol sm">${a.details||'-'}</div>
+</div>`).join('')||`<div class="lrow" style="color:var(--text3);font-size:12.5px;cursor:default">No security activity yet</div>`}
+</div>
+</div>`;
+}
+
+function calendarView(){
+  const now=new Date();
+  const y=now.getFullYear(),m=now.getMonth();
+  const start=new Date(y,m,1), end=new Date(y,m+1,0), prevEnd=new Date(y,m,0);
+  const days=end.getDate(), firstDow=start.getDay(), prevDays=prevEnd.getDate();
+  const monthTasks=S.tasks.filter(t=>{
+    if(t.company!==currentCompany())return false;
+    if(!t.due)return false;
+    const d=new Date(t.due);
+    return d.getFullYear()===y&&d.getMonth()===m&&(activeMember?taskMembers(t).includes(activeMember):true);
+  }).sort((a,b)=>new Date(a.due)-new Date(b.due));
+  const byDay={};monthTasks.forEach(t=>{const d=new Date(t.due).getDate();(byDay[d]||(byDay[d]=[])).push(t);});
+  const cells=[];
+  for(let i=0;i<firstDow;i++)cells.push({day:prevDays-firstDow+1+i,muted:true,tasks:[]});
+  for(let d=1;d<=days;d++)cells.push({day:d,muted:false,tasks:byDay[d]||[]});
+  while(cells.length%7!==0)cells.push({day:cells.length%7+1,muted:true,tasks:[]});
+  const wds=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let h=`<div class="list-view"><div class="lg"><div class="lg-hdr"><span class="lg-hdr-title">${start.toLocaleDateString('en-US',{month:'long',year:'numeric'})}</span><span style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${monthTasks.length} due</span></div><div class="cal-grid">${wds.map(w=>`<div class="cal-wd">${w}</div>`).join('')}${cells.map(c=>`<div class="cal-cell${c.muted?' muted':''}"><div class="cal-day">${c.day}</div>${c.tasks.slice(0,3).map(t=>`<div class="cal-task" data-tid="${t.id}">${t.title}</div>`).join('')}${c.tasks.length>3?`<div class="up-note">+${c.tasks.length-3} more</div>`:''}</div>`).join('')}</div></div></div>`;
+  return h;
+}
+
+function teamChatView(){
+  const msgs=(S.chats||[]).filter(m=>m.company===currentCompany()).sort((a,b)=>a.ts-b.ts);
+  return`<div class="chat-wrap">
+<div class="chat-feed" id="chat-feed">
+${msgs.map(m=>`<div class="chat-msg ${m.who===me()?'me':'ot'}"><div class="chat-meta">${m.who} • ${new Date(m.ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>${m.text}</div>`).join('')||`<div class="chat-msg ot">No team messages yet. Start the conversation.</div>`}
+</div>
+<div class="cm-input-row"><input class="cm-input" id="chat-inp" placeholder="Message your team..."><button class="btn btn-primary" id="chat-send">Send</button></div>
 </div>`;
 }
 
@@ -675,11 +902,43 @@ ${isAdmin()?`<div class="divider"></div>
 <div class="mfield"><input class="cm-input" id="add-name" placeholder="Name"></div>
 <div class="mfield"><input class="cm-input" id="add-email" placeholder="Email"></div>
 </div>
+<div class="mfield"><div class="mlabel">Admin step-up OTP (required for admin actions)</div><div class="flex gap8"><input class="cm-input" id="admin-action-otp" placeholder="Code from your email"><button class="btn btn-ghost" id="admin-step-send">Send OTP</button></div><div class="up-note">${adminStepFresh()?'Verified for sensitive actions (expires soon).':'Enter OTP once to unlock sensitive actions for 10 minutes.'}</div></div>
 <div class="mrow">
 <div class="mfield"><input class="cm-input" id="add-pass" placeholder="Password"></div>
 <div class="mfield"><select class="msel" id="add-role"><option value="member">Member</option><option value="admin">Admin</option></select></div>
+<div class="mfield"><select class="msel" id="add-company">${auth.companies.map(c=>`<option value="${c.id}"${c.id===currentCompany()?' selected':''}>${c.name}</option>`).join('')}</select></div>
 </div>
-<button class="btn btn-ghost" id="add-user-btn">Add User</button>`:''}
+<button class="btn btn-ghost" id="add-user-btn">Add User</button>
+<div class="divider"></div>
+<div class="mlabel" style="margin-bottom:8px">Send Invite Link</div>
+<div class="mrow">
+<div class="mfield"><input class="cm-input" id="inv-email" placeholder="teammate@email.com"></div>
+<div class="mfield"><select class="msel" id="inv-role"><option value="member">Member</option><option value="admin">Admin</option></select></div>
+<div class="mfield"><select class="msel" id="inv-company">${auth.companies.map(c=>`<option value="${c.id}"${c.id===currentCompany()?' selected':''}>${c.name}</option>`).join('')}</select></div>
+</div>
+<div class="flex gap8"><button class="btn btn-ghost" id="inv-copy">Copy invite link</button><button class="btn btn-ghost" id="inv-open-copy">Quick open link</button><button class="btn btn-primary" id="inv-email-btn">Send via email app</button></div>
+<div class="up-note">Quick open link works without entering an email.</div>
+<div class="divider"></div>
+<div class="mlabel" style="margin-bottom:8px">Company Users</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+${companyUsers().map(member=>`<div style="display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:8px">
+<div class="av" style="background:${member.color||colorForName(member.name)};width:24px;height:24px;font-size:10px">${member.name?.[0]||'?'}</div>
+<div style="flex:1;min-width:0">
+<div style="font-size:13px;color:var(--text)">${member.name}</div>
+<div style="font-size:11px;color:var(--text3)">${member.email} • ${member.role==='admin'?'Admin':'Member'}</div>
+</div>
+<button class="btn btn-ghost" data-prof-open="${member.email}" style="padding:6px 8px;font-size:11px">Open</button>
+${member.email!==currentUser()?.email?`<button class="btn btn-ghost" data-user-remove="${member.email}" style="padding:6px 8px;font-size:11px;color:#fda4af;border-color:#7f1d1d">Remove</button>`:''}
+</div>`).join('')}
+</div>
+<div class="divider"></div>
+<div class="mlabel" style="margin-bottom:8px">Security Audit Log</div>
+<div style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto">
+${(S.audit||[]).filter(a=>a.company===currentCompany()).slice(0,10).map(a=>`<div style="border:1px solid var(--border2);background:var(--surface2);border-radius:8px;padding:7px">
+<div style="font-size:12px;color:var(--text)">${a.action}</div>
+<div style="font-size:11px;color:var(--text3)">${a.by} • ${new Date(a.ts).toLocaleString()}${a.details?` • ${a.details}`:''}</div>
+</div>`).join('')||`<div class="up-note">No admin events yet.</div>`}
+</div>`:''}
 </div>
 <div class="modal-foot"><button class="btn btn-ghost" id="usr-cancel">Close</button>${canEdit?`<button class="btn btn-primary" id="usr-save">Save Profile</button>`:''}</div>
 </div></div>`;
@@ -697,9 +956,11 @@ function taskModal(){
 <div class="mrow">
 <div class="mfield"><div class="mlabel">Status</div><select class="msel" id="m-col">${taskCols.map(c=>`<option value="${c.id}"${c.id===t.cid?' selected':''}>${c.name}</option>`).join('')}</select></div>
 <div class="mfield"><div class="mlabel">Priority</div><select class="msel" id="m-pri">${['high','medium','low'].map(p=>`<option value="${p}"${p===t.pri?' selected':''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`).join('')}</select></div>
+<div class="mfield"><div class="mlabel">Group</div><select class="msel" id="m-group">${TASK_GROUPS.map(g=>`<option value="${g}"${(t.group||'CRM')===g?' selected':''}>${g}</option>`).join('')}</select></div>
 <div class="mfield"><div class="mlabel">Assignee</div><select class="msel" id="m-who">${memberList().map(m=>`<option value="${m}"${m===t.who?' selected':''}>${m}</option>`).join('')}</select></div>
 <div class="mfield"><div class="mlabel">Due date</div><input type="date" class="msel" id="m-due" value="${t.due||''}"></div>
 </div>
+<div class="mfield" style="margin-bottom:10px"><div class="mlabel">Collaborators (multi-select)</div><div style="display:flex;gap:6px;flex-wrap:wrap">${memberList().map(m=>`<label class="tag" style="background:var(--surface2);color:var(--text2);cursor:pointer"><input type="checkbox" data-m-collab="${m}" ${t.collabs?.includes(m)?'checked':''} style="margin-right:5px">${m}</label>`).join('')}</div></div>
 <div class="mfield" style="margin-bottom:14px"><div class="mlabel">Description</div><textarea class="mdesc" id="m-desc" placeholder="Add a description…">${t.desc||''}</textarea></div>
 <div class="mlabel" style="margin-bottom:8px">Brief Chatbot</div>
 <div class="brief-wrap">
@@ -753,9 +1014,11 @@ function newModal(){
 <div class="mrow">
 <div class="mfield"><div class="mlabel">Column</div><select class="msel" id="n-col">${cols.map(c=>`<option value="${c.id}"${c.id===defCid?' selected':''}>${c.name}</option>`).join('')}</select></div>
 <div class="mfield"><div class="mlabel">Priority</div><select class="msel" id="n-pri">${['high','medium','low'].map(p=>`<option value="${p}"${p===newTask.pri?' selected':''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`).join('')}</select></div>
+<div class="mfield"><div class="mlabel">Group</div><select class="msel" id="n-group">${TASK_GROUPS.map(g=>`<option value="${g}"${(newTask.group||'CRM')===g?' selected':''}>${g}</option>`).join('')}</select></div>
 <div class="mfield"><div class="mlabel">Assignee</div><select class="msel" id="n-who">${memberList().map(m=>`<option value="${m}"${m===newTask.who?' selected':''}>${m}</option>`).join('')}</select></div>
 <div class="mfield"><div class="mlabel">Due date</div><input type="date" class="msel" id="n-due" value="${newTask.due}"></div>
 </div>
+<div class="mfield" style="margin-bottom:10px"><div class="mlabel">Collaborators (multi-select)</div><div style="display:flex;gap:6px;flex-wrap:wrap">${memberList().map(m=>`<label class="tag" style="background:var(--surface2);color:var(--text2);cursor:pointer"><input type="checkbox" data-n-collab="${m}" style="margin-right:5px">${m}</label>`).join('')}</div></div>
 <div class="mfield"><div class="mlabel">Description</div><textarea class="mdesc" id="n-desc" placeholder="What needs to be done?">${newTask.desc}</textarea></div>
 </div>
 <div class="modal-foot"><button class="btn btn-ghost" id="n-cancel">Cancel</button><button class="btn btn-primary" id="n-create">Create task</button></div>
@@ -765,45 +1028,85 @@ function newModal(){
 function wire(){
   if(!auth.session){
     const setMode=(mode,note='')=>setAuth({...auth,mode,note});
+    const otpSave=$('otp-save');
+    if(otpSave)otpSave.addEventListener('click',()=>{
+      const url=$('otp-url')?.value.trim()||'';
+      const anonKey=$('otp-key')?.value.trim()||'';
+      setOtpCfg({...otpCfg,url,anonKey});
+      setMode(auth.mode,'OTP settings saved.');
+      render();
+    });
     const gl=$('goto-login');if(gl)gl.addEventListener('click',()=>{setMode('login');render()});
     const gs=$('goto-signup');if(gs)gs.addEventListener('click',()=>{setMode('signup');render()});
     const su=$('su-btn');
-    if(su)su.addEventListener('click',()=>{
+    if(su)su.addEventListener('click',async()=>{
       const name=$('su-name').value.trim();
       const email=$('su-email').value.trim().toLowerCase();
       const pass=$('su-pass').value;
+      const inputCompany=$('su-company')?.value.trim()||'';
+      const inviteCode=$('su-invite')?.value.trim()||'';
       if(!name||!email||pass.length<6){setMode('signup','Please enter valid details (password minimum 6 chars).');return render();}
       if(auth.users.some(u=>u.email===email)){setMode('signup','That email is already registered.');return render();}
-      const users=[...auth.users,{email,password:pass,name,verified:false,code:DEMO_CODE,role:'member',title:'Team Member',color:COLORS[auth.users.length%COLORS.length]}];
-      setAuth({...auth,users,pendingEmail:email,mode:'verify',note:'Account created. Check your email for verification.'});
-      toast('Verification code sent');
+      let role='member';
+      let company=DEFAULT_COMPANY;
+      let companies=[...auth.companies];
+      let invites=[...(auth.invites||[])];
+      if(inviteCode){
+        const idx=invites.findIndex(i=>i.code===inviteCode&&(i.email===email||!i.email));
+        if(idx===-1){setMode('signup','Invalid invite code.');return render();}
+        role=invites[idx].role||'member';
+        company=invites[idx].company||DEFAULT_COMPANY;
+        invites.splice(idx,1);
+      }else{
+        const label=inputCompany||`${name}'s Team`;
+        company=uniqueCompanyId(label);
+        role='admin';
+        companies=[...companies,{id:company,name:label}];
+        const projId=createCompanyWorkspace(company,label);
+        activePid=projId;
+      }
+      const users=[...auth.users,{email,password:pass,name,verified:false,otpRequired:true,code:DEMO_CODE,role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company}];
+      const otp=await sendRealOtp(email);
+      if(!otp.ok){setMode('signup',otp.msg);return render();}
+      setAuth({...auth,companies,users,invites,pendingEmail:email,mode:'verify',note:'Account created. Check your email for verification OTP.'});
+      toast('Real OTP sent');
       render();
     });
     const li=$('li-btn');
-    if(li)li.addEventListener('click',()=>{
+    if(li)li.addEventListener('click',async()=>{
       const email=$('li-email').value.trim().toLowerCase();
       const pass=$('li-pass').value;
       const user=auth.users.find(u=>u.email===email&&u.password===pass);
       if(!user){setMode('login','Invalid email or password.');return render();}
-      if(!user.verified){setAuth({...auth,pendingEmail:email,mode:'verify',note:'Please verify your email first.'});return render();}
-      setAuth({...auth,session:{email:user.email,name:user.name},note:''});
+      if(user.otpRequired||!user.verified){
+        const otp=await sendRealOtp(email);
+        if(!otp.ok){setMode('login',otp.msg);return render();}
+        setAuth({...auth,pendingEmail:email,mode:'verify',note:'Please verify your email with the OTP sent to your inbox.'});
+        return render();
+      }
+      setAuth({...auth,session:{email:user.email,name:user.name,company:user.company||DEFAULT_COMPANY},note:''});
       render();
     });
     const vf=$('vf-btn');
-    if(vf)vf.addEventListener('click',()=>{
+    if(vf)vf.addEventListener('click',async()=>{
       const code=$('vf-code').value.trim();
       const email=auth.pendingEmail;
-      const users=auth.users.map(u=>u.email===email&&code===u.code?{...u,verified:true,code:''}:u);
-      const verified=users.find(u=>u.email===email&&u.verified);
-      if(!verified){setAuth({...auth,mode:'verify',note:'Code is incorrect. Try again.'});return render();}
-      setAuth({...auth,users,session:{email:verified.email,name:verified.name},mode:'login',note:''});
+      const check=await verifyRealOtp(email,code);
+      if(!check.ok){setAuth({...auth,mode:'verify',note:check.msg});return render();}
+      const users=auth.users.map(u=>u.email===email?{...u,verified:true,otpRequired:false,code:''}:u);
+      const verified=users.find(u=>u.email===email&&u.verified&&!u.otpRequired);
+      if(!verified){setAuth({...auth,mode:'verify',note:'Could not complete verification for this account.'});return render();}
+      setAuth({...auth,users,session:{email:verified.email,name:verified.name,company:verified.company||DEFAULT_COMPANY},mode:'login',note:''});
       render();
     });
     const vr=$('vf-resend');
-    if(vr)vr.addEventListener('click',()=>{
-      const users=auth.users.map(u=>u.email===auth.pendingEmail?{...u,code:DEMO_CODE}:u);
-      setAuth({...auth,users,mode:'verify',note:'New verification code sent.'});
-      toast('Verification code resent');
+    if(vr)vr.addEventListener('click',async()=>{
+      const email=auth.pendingEmail;
+      const otp=await sendRealOtp(email);
+      if(!otp.ok){setAuth({...auth,mode:'verify',note:otp.msg});return render();}
+      const users=auth.users.map(u=>u.email===email?{...u,otpRequired:true}:u);
+      setAuth({...auth,users,mode:'verify',note:'New OTP sent.'});
+      toast('OTP resent');
       render();
     });
     return;
@@ -837,6 +1140,15 @@ function wire(){
   }));
   // View toggle
   qq('[data-view]').forEach(el=>el.addEventListener('click',()=>{activeView=el.dataset.view;render()}));
+  const csw=$('company-switch');
+  if(csw)csw.addEventListener('change',()=>{
+    if(!auth.session)return;
+    const company=csw.value;
+    const firstProj=S.projects.find(p=>p.company===company)?.id||'';
+    activePid=firstProj||activePid;
+    setAuth({...auth,session:{...auth.session,company}});
+    render();
+  });
   // User management
   const usersBtn=$('users-btn');
   if(usersBtn)usersBtn.addEventListener('click',()=>{
@@ -847,33 +1159,112 @@ function wire(){
   const usrClose=$('usr-close');if(usrClose)usrClose.addEventListener('click',()=>{showUserModal=false;render()});
   const usrCancel=$('usr-cancel');if(usrCancel)usrCancel.addEventListener('click',()=>{showUserModal=false;render()});
   const usrOv=$('usr-ov');if(usrOv)usrOv.addEventListener('click',e=>{if(e.target===usrOv){showUserModal=false;render()}});
+  const adminStepSend=$('admin-step-send');
+  if(adminStepSend)adminStepSend.addEventListener('click',async()=>{await sendAdminStepOtp();});
   const usrSave=$('usr-save');
-  if(usrSave)usrSave.addEventListener('click',()=>{
+  if(usrSave)usrSave.addEventListener('click',async()=>{
     const target=auth.users.find(u=>u.email===profileEmail);if(!target)return;
     const canEdit=isAdmin()||target.email===currentUser()?.email;
     if(!canEdit)return;
+    const previousRole=target.role;
     target.name=$('usr-name').value.trim()||target.name;
     target.title=$('usr-title').value.trim()||target.title;
     target.color=$('usr-color').value.trim()||target.color;
-    if(isAdmin())target.role=$('usr-role').value;
+    if(isAdmin()){
+      const requestedRole=$('usr-role').value==='admin'?'admin':'member';
+      if(target.role!=='admin'&&requestedRole==='admin'){
+        if(!await ensureAdminStepVerified('admin-action-otp'))return;
+      }
+      target.role=requestedRole;
+      if(previousRole!==target.role){
+        logAudit('User role changed',`${target.email}: ${previousRole} -> ${target.role}`);
+      }
+    }
     if(auth.session?.email===target.email)auth.session.name=target.name;
     setAuth({...auth,users:[...auth.users]});
     toast('Profile updated');
     showUserModal=false;
     render();
   });
+  qq('[data-prof-open]').forEach(el=>el.addEventListener('click',()=>{
+    profileEmail=el.dataset.profOpen;
+    showUserModal=true;
+    render();
+  }));
+  qq('[data-user-remove]').forEach(el=>el.addEventListener('click',async()=>{
+    if(!isAdmin())return;
+    const email=(el.dataset.userRemove||'').toLowerCase();
+    if(!email||email===currentUser()?.email){toast('You cannot remove your own active account');return;}
+    const target=auth.users.find(u=>u.email===email);
+    if(!target||target.company!==currentCompany())return;
+    const adminCount=auth.users.filter(u=>u.company===target.company&&u.role==='admin').length;
+    if(target.role==='admin'&&adminCount<=1){toast('Add another admin before removing this admin');return;}
+    if(!await ensureAdminStepVerified('admin-action-otp'))return;
+    if(!confirm(`Remove ${target.name} from ${companyName(target.company)}?`))return;
+    S.tasks.forEach(t=>{
+      if(t.company!==target.company)return;
+      if(t.who===target.name)t.who=me();
+      if(Array.isArray(t.collabs))t.collabs=t.collabs.filter(n=>n!==target.name);
+    });
+    logAudit('User removed',target.email);
+    profileEmail=currentUser()?.email||'';
+    setAuth({...auth,users:auth.users.filter(u=>u.email!==email)});
+    toast('User removed');
+    render();
+  }));
   const addUserBtn=$('add-user-btn');
-  if(addUserBtn)addUserBtn.addEventListener('click',()=>{
+  if(addUserBtn)addUserBtn.addEventListener('click',async()=>{
     if(!isAdmin())return;
     const name=$('add-name').value.trim();
     const email=$('add-email').value.trim().toLowerCase();
     const pass=$('add-pass').value.trim()||'demo123';
     const role=$('add-role').value==='admin'?'admin':'member';
+    const company=$('add-company')?.value||currentCompany();
     if(!name||!email){toast('Name and email are required');return;}
     if(auth.users.some(u=>u.email===email)){toast('Email already exists');return;}
-    const users=[...auth.users,{email,password:pass,name,verified:true,code:'',role,title:'Team Member',color:COLORS[auth.users.length%COLORS.length]}];
+    if(role==='admin'&&!await ensureAdminStepVerified('admin-action-otp'))return;
+    const users=[...auth.users,{email,password:pass,name,verified:false,otpRequired:true,code:DEMO_CODE,role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company}];
     setAuth({...auth,users});
+    logAudit('User created',`${email} (${role})`);
     toast(`${name} added as ${role}`);
+    render();
+  });
+  const invCopy=$('inv-copy');
+  if(invCopy)invCopy.addEventListener('click',async()=>{
+    const email=$('inv-email').value.trim().toLowerCase();
+    const role=$('inv-role').value==='admin'?'admin':'member';
+    const company=$('inv-company')?.value||currentCompany();
+    if(role==='admin'&&!await ensureAdminStepVerified('admin-action-otp'))return;
+    const link=makeInvite(email,role,company);
+    logAudit('Invite link generated',`${role} ${email||'(open link)'}`);
+    try{await navigator.clipboard.writeText(link);toast(email?'Invite link copied':'Open invite link copied');}
+    catch(_){toast(link);}
+    render();
+  });
+  const invOpenCopy=$('inv-open-copy');
+  if(invOpenCopy)invOpenCopy.addEventListener('click',async()=>{
+    const role=$('inv-role').value==='admin'?'admin':'member';
+    const company=$('inv-company')?.value||currentCompany();
+    if(role==='admin'&&!await ensureAdminStepVerified('admin-action-otp'))return;
+    const link=makeInvite('',role,company);
+    logAudit('Open invite generated',role);
+    try{await navigator.clipboard.writeText(link);toast('Open invite link copied');}
+    catch(_){toast(link);}
+    render();
+  });
+  const invEmailBtn=$('inv-email-btn');
+  if(invEmailBtn)invEmailBtn.addEventListener('click',async()=>{
+    const email=$('inv-email').value.trim().toLowerCase();
+    const role=$('inv-role').value==='admin'?'admin':'member';
+    const company=$('inv-company')?.value||currentCompany();
+    if(!email){toast('Enter an email first');return;}
+    if(role==='admin'&&!await ensureAdminStepVerified('admin-action-otp'))return;
+    const link=makeInvite(email,role,company);
+    const subject=encodeURIComponent('You are invited to WorkFlow');
+    const body=encodeURIComponent(`Join our project with this invite link:\n\n${link}\n\nRole: ${role}\nCompany: ${companyName(company)}`);
+    location.href=`mailto:${email}?subject=${subject}&body=${body}`;
+    logAudit('Invite email launched',`${email} (${role})`);
+    toast('Opened email app with invite');
     render();
   });
   // AI Studio
@@ -919,6 +1310,15 @@ function wire(){
     clearTimeout(searchTimer);
     searchTimer=setTimeout(()=>{search=next;render();},130);
   });
+  const chatSend=$('chat-send');
+  if(chatSend)chatSend.addEventListener('click',()=>{
+    const v=$('chat-inp')?.value.trim();
+    if(!v)return;
+    S.chats.push({id:'m'+Date.now(),company:currentCompany(),who:me(),text:v,ts:Date.now()});
+    render();
+  });
+  const chatInp=$('chat-inp');
+  if(chatInp)chatInp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('chat-send')?.click()}});
   const out=$('logout-row');
   if(out)out.addEventListener('click',()=>{
     setAuth({...auth,session:null,mode:'login',note:''});
@@ -928,14 +1328,14 @@ function wire(){
   // New task
   const nb=$('new-btn');if(nb)nb.addEventListener('click',()=>{
     const pid=activeSection==='project'?activePid:S.projects[0]?.id;
-    newTask={title:'',cid:projCols(pid)[0]?.id||'',pri:'medium',who:me(),due:'',desc:''};
+    newTask={title:'',cid:projCols(pid)[0]?.id||'',pri:'medium',group:'CRM',who:me(),due:'',desc:''};
     showNewModal=true;render();
   });
   // Add column
   const ac=$('add-col-btn');
   if(ac)ac.addEventListener('click',()=>{
     const name=prompt('Column name:');if(!name)return;
-    S.columns.push({id:'c'+Date.now(),name,color:COLORS[S.columns.length%COLORS.length],pid:activePid});
+    S.columns.push({id:'c'+Date.now(),name,color:COLORS[S.columns.length%COLORS.length],pid:activePid,company:currentCompany()});
     toast('Column "'+name+'" added');render();
   });
   // Open task cards
@@ -948,7 +1348,7 @@ function wire(){
   // Add task from column
   qq('[data-addcol]').forEach(el=>el.addEventListener('click',e=>{
     e.stopPropagation();
-    newTask={title:'',cid:el.dataset.addcol,pri:'medium',who:me(),due:'',desc:''};
+    newTask={title:'',cid:el.dataset.addcol,pri:'medium',group:'CRM',who:me(),due:'',desc:''};
     showNewModal=true;render();
   }));
   // List check
@@ -972,7 +1372,9 @@ function wire(){
     ensureTaskShape(t);
     t.title=$('m-title').value||t.title;
     t.cid=$('m-col').value;t.pri=$('m-pri').value;
+    t.group=$('m-group').value;
     t.who=$('m-who').value;t.due=$('m-due').value;
+    t.collabs=[...qq('[data-m-collab]:checked')].map(x=>x.dataset.mCollab).filter(n=>n&&n!==t.who);
     t.desc=$('m-desc').value;
     t.ai.prompt=$('m-ai-prompt')?.value||'';
     t.ai.doc=$('m-ai-doc')?.value||'';
@@ -1078,8 +1480,10 @@ function wire(){
   if(ncr)ncr.addEventListener('click',()=>{
     const title=$('n-title').value.trim();
     if(!title){$('n-title').style.borderBottom='2px solid var(--red)';$('n-title').focus();return;}
-    S.tasks.push({id:'t'+Date.now(),title,cid:$('n-col').value,pri:$('n-pri').value,who:$('n-who').value,due:$('n-due').value,tags:[],subs:[],cms:[],desc:$('n-desc').value,atts:[],ai:{prompt:'',doc:'',out:''},briefChat:[]});
-    showNewModal=false;newTask={title:'',cid:'',pri:'medium',who:me(),due:'',desc:''};
+    const owner=$('n-who').value;
+    const collabs=[...qq('[data-n-collab]:checked')].map(x=>x.dataset.nCollab).filter(n=>n&&n!==owner);
+    S.tasks.push({id:'t'+Date.now(),title,cid:$('n-col').value,pri:$('n-pri').value,group:$('n-group').value,who:owner,collabs,due:$('n-due').value,tags:[],subs:[],cms:[],desc:$('n-desc').value,atts:[],ai:{prompt:'',doc:'',out:''},briefChat:[],company:currentCompany()});
+    showNewModal=false;newTask={title:'',cid:'',pri:'medium',group:'CRM',who:me(),due:'',desc:''};
     toast('"'+title+'" created');render();
   });
   const ntInp=$('n-title');
