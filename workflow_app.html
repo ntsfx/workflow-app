@@ -207,7 +207,7 @@ radial-gradient(circle at 80% 100%,rgba(52,211,153,0.16),transparent 36%),var(--
 <script>
 const COLORS=['#7c6af7','#34d399','#f472b6','#60a5fa','#fbbf24','#f87171','#a78bfa'];
 const AVATARS={Alex:'#7c6af7',Sam:'#34d399',Jordan:'#f472b6',Casey:'#60a5fa',Morgan:'#fbbf24'};
-const TASK_GROUPS=['CRM','Paid Media','Developers','Copy','SEO','Affiliate','Content','Analytics','Design','Compliance'];
+const TASK_GROUPS=['CRM','PAID MEDIA','ORGANIC SOCIAL','DEVELOPERS'];
 const DEFAULT_COMPANY='company-a';
 
 const INIT={
@@ -290,7 +290,8 @@ function normalizeAuth(a){
       role:u.role==='admin'?'admin':'member',
       title:u.title||'Team Member',
       color:u.color||COLORS[i%COLORS.length],
-      company:u.company||DEFAULT_COMPANY
+      company:u.company||DEFAULT_COMPANY,
+      invited:u.invited===true
     }));
   if(!users.length)users=mkAuth().users;
   const invites=Array.isArray(a.invites)?a.invites:[];
@@ -314,6 +315,7 @@ let newTask={title:'',cid:'',pri:'medium',group:'CRM',who:'Alex',due:'',desc:''}
 let studioPrompt='';
 let studioDoc='';
 let studioOut='';
+let studioChat=[];
 let auth=normalizeAuth(readJSON(AUTH_KEY,mkAuth()));
 const urlInviteCode=new URLSearchParams(location.search).get('invite')||'';
 
@@ -364,6 +366,7 @@ function ensureTaskShape(t){
   if(!Array.isArray(t.collabs))t.collabs=[];
   t.collabs=t.collabs.filter(n=>n&&n!==t.who);
   if(!t.group)t.group='CRM';
+  t.group=normalizeGroup(t.group);
   if(!t.company)t.company=DEFAULT_COMPANY;
 }
 
@@ -391,6 +394,14 @@ function colTasks(cid){return S.tasks.filter(t=>t.cid===cid&&t.company===current
 function projTasks(pid){const ids=projCols(pid).map(c=>c.id);return S.tasks.filter(t=>ids.includes(t.cid)&&t.company===currentCompany())}
 function colById(cid){return S.columns.find(c=>c.id===cid)||null}
 function taskPid(task){return colById(task.cid)?.pid||activePid}
+function normalizeGroup(g){
+  const raw=(g||'').toString().trim().toUpperCase();
+  if(raw==='PAID MEDIA')return 'PAID MEDIA';
+  if(raw==='ORGANIC SOCIAL')return 'ORGANIC SOCIAL';
+  if(raw==='DEVELOPERS'||raw==='DEV')return 'DEVELOPERS';
+  if(raw==='CRM')return 'CRM';
+  return 'CRM';
+}
 function normCol(name){
   if(name==='Backlog'||name==='In Progress'||name==='Review'||name==='Done')return name;
   return 'Other';
@@ -411,15 +422,14 @@ function makeScopedColumns(section){
     return true;
   });
   const groups=[
-    {id:'g-backlog',name:'Backlog',color:'#5a5a72',tasks:[]},
-    {id:'g-progress',name:'In Progress',color:'#60a5fa',tasks:[]},
-    {id:'g-review',name:'Review',color:'#fbbf24',tasks:[]},
-    {id:'g-done',name:'Done',color:'#34d399',tasks:[]},
-    {id:'g-other',name:'Other',color:'#f472b6',tasks:[]}
+    {id:'g-crm',name:'CRM',color:'#7c6af7',tasks:[]},
+    {id:'g-paid',name:'PAID MEDIA',color:'#fbbf24',tasks:[]},
+    {id:'g-organic',name:'ORGANIC SOCIAL',color:'#34d399',tasks:[]},
+    {id:'g-dev',name:'DEVELOPERS',color:'#60a5fa',tasks:[]}
   ];
-  const idx={Backlog:0,'In Progress':1,Review:2,Done:3,Other:4};
+  const idx={CRM:0,'PAID MEDIA':1,'ORGANIC SOCIAL':2,DEVELOPERS:3};
   scoped.forEach(t=>{
-    const key=normCol(colById(t.cid)?.name||'Other');
+    const key=normalizeGroup(t.group);
     groups[idx[key]].tasks.push(t);
   });
   return groups.filter(g=>g.tasks.length||section==='all');
@@ -427,7 +437,7 @@ function makeScopedColumns(section){
 function progress(task){if(!task.subs.length)return null;return Math.round(task.subs.filter(s=>s.done).length/task.subs.length*100)}
 function priColor(p){return p==='high'?'var(--red)':p==='medium'?'var(--amber)':'var(--text3)'}
 function tagStyle(tag){
-  const m={Design:'var(--pink)',Dev:'var(--blue)',Research:'var(--accent2)',Content:'var(--green)',Admin:'var(--text2)',UI:'var(--pink)',Infra:'var(--amber)',Strategy:'var(--amber)'};
+  const m={CRM:'var(--accent)', 'PAID MEDIA':'var(--amber)', 'ORGANIC SOCIAL':'var(--green)', DEVELOPERS:'var(--blue)', Design:'var(--pink)',Dev:'var(--blue)',Research:'var(--accent2)',Content:'var(--green)',Admin:'var(--text2)',UI:'var(--pink)',Infra:'var(--amber)',Strategy:'var(--amber)'};
   const c=m[tag]||'var(--text2)';return`color:${c};background:${c}22`;
 }
 function memberAvatars(names,size=20){
@@ -469,6 +479,71 @@ function aiSummarize(text,prompt=''){
 function aiBuildPrompt(goal,style,format,notes){
   return `You are an expert assistant.\nGoal: ${goal||'Improve the selected document/task.'}\nStyle: ${style||'Clear and concise'}\nOutput format: ${format||'Bullet list with recommendations'}\nConstraints: ${notes||'Use only provided information; be specific.'}\n\nFirst, provide a concise summary. Then provide prioritized next actions.`;
 }
+function taskStatusLine(t){
+  const status=colById(t.cid)?.name||'Unknown';
+  const ppl=taskMembers(t).join(', ')||'Unassigned';
+  const due=t.due?fmtDue(t.due)?.t||t.due:'No due date';
+  const prog=progress(t);
+  return `Task: ${t.title}\n- Status: ${status}\n- Group: ${normalizeGroup(t.group)}\n- Owner/Team: ${ppl}\n- Priority: ${(t.pri||'medium').toUpperCase()}\n- Due: ${due}\n- Progress: ${prog===null?'No subtasks yet':`${prog}%`}`;
+}
+function findTaskFromQuery(q){
+  const text=(q||'').toLowerCase();
+  const tasks=S.tasks.filter(t=>t.company===currentCompany());
+  let best=null,bestScore=0;
+  tasks.forEach(t=>{
+    const title=(t.title||'').toLowerCase();
+    let score=0;
+    if(text.includes(title))score+=100;
+    const tw=title.split(/\W+/).filter(w=>w.length>2);
+    tw.forEach(w=>{if(text.includes(w))score+=3;});
+    if(score>bestScore){bestScore=score;best=t;}
+  });
+  return bestScore>=6?best:null;
+}
+function buildTaskBrief(t,userPrompt=''){
+  const desc=(t.desc||'').trim()||'No description provided yet.';
+  const due=t.due?fmtDue(t.due)?.t||t.due:'No due date set';
+  const team=taskMembers(t).join(', ')||'Unassigned';
+  return `Project Brief: ${t.title}
+- Objective: Deliver ${t.title.toLowerCase()} with clear outcome and owner accountability.
+- Context: ${desc}
+- Team: ${team}
+- Priority: ${(t.pri||'medium').toUpperCase()}
+- Deadline: ${due}
+- Success Criteria:
+  - Task moved to Done with acceptance notes.
+  - Stakeholders confirm output quality.
+  - Dependencies and blockers tracked in comments.
+- Execution Plan:
+  - Define scope and required assets.
+  - Build first draft and review internally.
+  - Implement revisions and finalize.
+${userPrompt?`- Extra instruction: ${userPrompt}`:''}`;
+}
+function aiStudioReply(question){
+  const q=(question||'').trim();
+  const lower=q.toLowerCase();
+  const target=findTaskFromQuery(q);
+  if(/\b(write|create|draft|build)\b.*\bbrief\b/.test(lower)){
+    if(target)return buildTaskBrief(target,q);
+    if(openTid){
+      const t=S.tasks.find(x=>x.id===openTid);
+      if(t)return buildTaskBrief(t,q);
+    }
+    return 'I can write a brief. Mention a task name, e.g. "write a brief for design onboarding flow screens".';
+  }
+  if(/\b(task|status|progress|who|owner|working on|assignee|due)\b/.test(lower)){
+    if(target)return taskStatusLine(target);
+    return 'Tell me a task name and I will report owner, collaborators, status, due date, and progress.';
+  }
+  if(/\b(list|show)\b.*\b(tasks|deadlines|due)\b/.test(lower)){
+    const tasks=S.tasks.filter(t=>t.company===currentCompany()).filter(t=>t.due).sort((a,b)=>new Date(a.due)-new Date(b.due)).slice(0,6);
+    if(!tasks.length)return 'No due-dated tasks found in this company yet.';
+    return `Upcoming Tasks\n${tasks.map(t=>`- ${t.title} (${fmtDue(t.due)?.t||t.due}) • ${taskMembers(t).join(', ')}`).join('\n')}`;
+  }
+  if(studioDoc.trim())return aiSummarize(studioDoc,q);
+  return 'Ask me things like: "write a brief for [task name]" or "tell me about task [task name]".';
+}
 function briefChatReply(task,question){
   const q=(question||'').toLowerCase();
   const brief=(task.desc||task.ai?.doc||'').trim();
@@ -503,8 +578,35 @@ function fileToDataUrl(file){
 }
 function makeInvite(email,role='member',company=currentCompany()){
   const code='inv_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-  const invite={email:(email||'').toLowerCase(),role,company,code,createdAt:Date.now(),createdBy:me()};
-  setAuth({...auth,invites:[...(auth.invites||[]),invite]});
+  const cleanEmail=(email||'').toLowerCase().trim();
+  const invite={email:cleanEmail,role,company,code,createdAt:Date.now(),createdBy:me()};
+  let users=[...auth.users];
+  if(cleanEmail){
+    const existing=users.find(u=>u.email===cleanEmail);
+    if(existing){
+      existing.role=role==='admin'?'admin':'member';
+      existing.company=company;
+      existing.title=existing.role==='admin'?'Team Admin':'Team Member';
+    }else{
+      const base=cleanEmail.split('@')[0]||'member';
+      const name=base.replace(/[._-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());
+      users.push({
+        email:cleanEmail,
+        password:'',
+        name:name||'Invited Member',
+        verified:false,
+        otpRequired:false,
+        code:'',
+        role:role==='admin'?'admin':'member',
+        title:role==='admin'?'Team Admin':'Team Member',
+        color:COLORS[users.length%COLORS.length],
+        company,
+        invited:true
+      });
+    }
+  }
+  setAuth({...auth,users,invites:[...(auth.invites||[]),invite]});
+  logAudit('Invite created',`${cleanEmail||'open link'} (${role})`);
   return `${location.origin}${location.pathname}?invite=${code}`;
 }
 function toSlug(v){
@@ -610,7 +712,8 @@ function sidebar(){
   h+=`<div class="sb-item ${!activeMember?'active':''}" data-member=""><div class="pdot" style="background:var(--text3)"></div>All Members</div>`;
   mems.forEach(m=>{
     const u=auth.users.find(x=>x.name===m);
-    h+=`<div class="sb-item ${activeMember===m?'active':''}" data-member="${m}"><div class="av" style="background:${colorForName(m)};width:16px;height:16px;font-size:8px">${m[0]}</div>${m}${u&&isAdmin()?`<span class="role-pill" data-open-profile="${u.email}">${u.role==='admin'?'Admin':'User'}</span>`:''}</div>`;
+    const label=u?(u.invited?'Invited':(u.role==='admin'?'Admin':'User')):'';
+    h+=`<div class="sb-item ${activeMember===m?'active':''}" data-member="${m}"><div class="av" style="background:${colorForName(m)};width:16px;height:16px;font-size:8px">${m[0]}</div>${m}${u&&isAdmin()?`<span class="role-pill" data-open-profile="${u.email}">${label}</span>`:''}</div>`;
   });
   h+=`</div><div class="sb-footer"><div class="user-row" id="logout-row"><div class="av" style="background:linear-gradient(135deg,var(--accent),var(--pink))">${me().slice(0,1)}</div><div><div style="font-size:13px;font-weight:500">${me()}</div><div style="font-size:11px;color:var(--text3)">${isAdmin()?'Admin':'Member'} • Sign out</div></div></div></div>`;
   return h;
@@ -779,7 +882,14 @@ function aiStudioModal(){
 <div class="flex aic gap8" style="margin-top:8px"><input type="file" id="ai-doc-files" multiple><button class="btn btn-ghost" id="ai-doc-import">Import Text Files</button></div>
 <div class="up-note">Supported for import: txt, md, csv, json, js/ts, html/css and other plain-text files.</div>
 <div class="divider"></div>
-<div class="mlabel" style="margin-bottom:8px">AI Output</div>
+<div class="mlabel" style="margin-bottom:8px">AI Assistant Chat</div>
+<div class="brief-wrap" style="margin-bottom:10px">
+<div class="brief-feed" id="ai-chat-feed">
+${studioChat.length?studioChat.map(m=>`<div class="brief-msg ${m.role==='user'?'user':'bot'}">${m.text}</div>`).join(''):`<div class="brief-msg bot">Ask me to write a brief or ask for task status by name.</div>`}
+</div>
+<div class="cm-input-row"><input class="cm-input" id="ai-chat-inp" placeholder='Try: "write a brief for [task name]"'><button class="btn btn-primary" id="ai-chat-send">Send</button></div>
+</div>
+<div class="mlabel" style="margin-bottom:8px">Latest Output</div>
 <div class="ai-box"><div class="ai-out" id="ai-out">${studioOut||'No output yet.'}</div></div>
 </div>
 <div class="modal-foot"><button class="btn btn-ghost" id="ai-clear">Clear</button><button class="btn btn-primary" id="ai-use-prompt">Use Prompt In Task</button></div>
@@ -829,7 +939,7 @@ ${companyUsers().map(member=>`<div style="display:flex;align-items:center;gap:8p
 <div class="av" style="background:${member.color||colorForName(member.name)};width:24px;height:24px;font-size:10px">${member.name?.[0]||'?'}</div>
 <div style="flex:1;min-width:0">
 <div style="font-size:13px;color:var(--text)">${member.name}</div>
-<div style="font-size:11px;color:var(--text3)">${member.email} • ${member.role==='admin'?'Admin':'Member'}</div>
+<div style="font-size:11px;color:var(--text3)">${member.email} • ${member.role==='admin'?'Admin':'Member'}${member.invited?' • Invited':''}</div>
 </div>
 <button class="btn btn-ghost" data-prof-open="${member.email}" style="padding:6px 8px;font-size:11px">Open</button>
 ${member.email!==currentUser()?.email?`<button class="btn btn-ghost" data-user-remove="${member.email}" style="padding:6px 8px;font-size:11px;color:#fda4af;border-color:#7f1d1d">Remove</button>`:''}
@@ -942,7 +1052,8 @@ function wire(){
       const inputCompany=$('su-company')?.value.trim()||'';
       const inviteCode=$('su-invite')?.value.trim()||'';
       if(!name||!email||pass.length<6){setMode('signup','Please enter valid details (password minimum 6 chars).');return render();}
-      if(auth.users.some(u=>u.email===email)){setMode('signup','That email is already registered.');return render();}
+      const existing=auth.users.find(u=>u.email===email);
+      if(existing&&!existing.invited){setMode('signup','That email is already registered.');return render();}
       let role='member';
       let company=DEFAULT_COMPANY;
       let companies=[...auth.companies];
@@ -961,7 +1072,23 @@ function wire(){
         const projId=createCompanyWorkspace(company,label);
         activePid=projId;
       }
-      const users=[...auth.users,{email,password:pass,name,verified:true,otpRequired:false,code:'',role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company}];
+      let users=[...auth.users];
+      if(existing&&existing.invited){
+        users=users.map(u=>u.email===email?{
+          ...u,
+          password:pass,
+          name,
+          verified:true,
+          otpRequired:false,
+          code:'',
+          role,
+          title:role==='admin'?'Team Admin':'Team Member',
+          company,
+          invited:false
+        }:u);
+      }else{
+        users=[...users,{email,password:pass,name,verified:true,otpRequired:false,code:'',role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company,invited:false}];
+      }
       setAuth({...auth,companies,users,mode:'login',note:'Account created. You can now log in.'});
       toast('Account created');
       render();
@@ -1082,7 +1209,7 @@ function wire(){
     const company=$('add-company')?.value||currentCompany();
     if(!name||!email){toast('Name and email are required');return;}
     if(auth.users.some(u=>u.email===email)){toast('Email already exists');return;}
-    const users=[...auth.users,{email,password:pass,name,verified:true,otpRequired:false,code:'',role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company}];
+    const users=[...auth.users,{email,password:pass,name,verified:true,otpRequired:false,code:'',role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company,invited:false}];
     setAuth({...auth,users});
     logAudit('User created',`${email} (${role})`);
     toast(`${name} added as ${role}`);
@@ -1145,18 +1272,34 @@ function wire(){
     studioDoc=$('ai-doc').value;
     const prompt=studioPrompt||aiBuildPrompt($('ai-goal').value.trim(),$('ai-style').value.trim(),$('ai-format').value.trim(),$('ai-notes').value.trim());
     studioOut=aiSummarize(studioDoc,prompt);
+    studioChat.push({role:'user',text:'Summarize the current document'});
+    studioChat.push({role:'bot',text:studioOut});
     $('ai-out').textContent=studioOut;
   });
+  const aiChatSend=$('ai-chat-send');
+  if(aiChatSend)aiChatSend.addEventListener('click',()=>{
+    const q=$('ai-chat-inp')?.value.trim();
+    if(!q)return;
+    studioDoc=$('ai-doc')?.value||studioDoc;
+    const a=aiStudioReply(q);
+    studioChat.push({role:'user',text:q});
+    studioChat.push({role:'bot',text:a});
+    studioOut=a;
+    render();
+  });
+  const aiChatInp=$('ai-chat-inp');
+  if(aiChatInp)aiChatInp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('ai-chat-send')?.click()}});
   const aiClear=$('ai-clear');
   if(aiClear)aiClear.addEventListener('click',()=>{
-    studioPrompt='';studioDoc='';studioOut='';
+    studioPrompt='';studioDoc='';studioOut='';studioChat=[];
     render();
   });
   const aiUse=$('ai-use-prompt');
   if(aiUse)aiUse.addEventListener('click',()=>{
     if(!openTid){toast('Open a task to use this prompt there');return;}
     const t=S.tasks.find(x=>x.id===openTid);if(!t)return;
-    t.ai.prompt=studioPrompt||$('ai-out').textContent||'';
+    const lastBot=[...studioChat].reverse().find(m=>m.role==='bot')?.text||'';
+    t.ai.prompt=studioPrompt||lastBot||$('ai-out').textContent||'';
     toast('Prompt copied to task AI panel');
   });
   // Search
