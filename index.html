@@ -249,8 +249,8 @@ const APP_KEY='workflow_app_state_v4';
 const AUTH_KEY='workflow_auth_v4';
 const SB_CFG_KEY='wf_supabase_cfg_v1';
 const DEMO_CODE='246810';
-const SUPABASE_URL='';
-const SUPABASE_ANON_KEY='';
+const SUPABASE_URL='https://xzunrwhinzwvjvepkwsy.supabase.co';
+const SUPABASE_ANON_KEY='sb_publishable_AewVPtY8Wn3v_iNcZXL0mw_hf017MEP';
 const SB_COMPANIES='wf_companies';
 const SB_MEMBERS='wf_members';
 const SB_STATES='wf_states';
@@ -409,6 +409,8 @@ const urlParams=new URLSearchParams(location.search);
 const urlInviteCode=urlParams.get('invite')||'';
 const urlMode=(urlParams.get('mode')||'').toLowerCase();
 const urlInviteEmail=(urlParams.get('email')||'').toLowerCase();
+const urlInviteCompany=(urlParams.get('company')||'').trim();
+const urlInviteRole=((urlParams.get('role')||'member').toLowerCase()==='admin'?'admin':'member');
 if(urlInviteCode||urlMode==='signup'){
   auth.mode='signup';
   auth.note='Invite flow active. Create your own password to continue.';
@@ -927,7 +929,7 @@ function makeInvite(email,role='member',company=currentCompany()){
   }
   setAuth({...auth,users,invites:[...(auth.invites||[]),invite]});
   logAudit('Invite created',`${cleanEmail||'open link'} (${role})`);
-  return `${location.origin}${location.pathname}?mode=signup&invite=${code}${cleanEmail?`&email=${encodeURIComponent(cleanEmail)}`:''}`;
+  return `${location.origin}${location.pathname}?mode=signup&invite=${code}${cleanEmail?`&email=${encodeURIComponent(cleanEmail)}`:''}&company=${encodeURIComponent(company)}&role=${encodeURIComponent(role==='admin'?'admin':'member')}`;
 }
 function toSlug(v){
   return (v||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,24)||'workspace';
@@ -936,6 +938,11 @@ function uniqueCompanyId(name){
   let id='company-'+toSlug(name);
   if(!auth.companies.some(c=>c.id===id))return id;
   return `${id}-${Date.now().toString(36).slice(-4)}`;
+}
+function ensureCompanyListed(companies,companyId,label=''){
+  if(!companyId)return companies;
+  if(companies.some(c=>c.id===companyId))return companies;
+  return [...companies,{id:companyId,name:label||companyId}];
 }
 function createCompanyWorkspace(companyId,companyLabel){
   const projectId='p_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
@@ -1421,10 +1428,18 @@ function wire(){
       let invites=[...(auth.invites||[])];
       if(inviteCode){
         const idx=invites.findIndex(i=>i.code===inviteCode&&(i.email===email||!i.email));
-        if(idx===-1){setMode('signup','Invalid invite code.');return render();}
-        role=invites[idx].role||'member';
-        company=invites[idx].company||DEFAULT_COMPANY;
-        invites.splice(idx,1);
+        if(idx!==-1){
+          role=invites[idx].role||'member';
+          company=invites[idx].company||DEFAULT_COMPANY;
+          invites.splice(idx,1);
+        }else{
+          const urlInviteMatches=(inviteCode===urlInviteCode)&&!!urlInviteCompany;
+          if(!urlInviteMatches){setMode('signup','Invalid invite link or code. Ask admin to send a new invite.');return render();}
+          if(urlInviteEmail&&urlInviteEmail!==email){setMode('signup',`Use invited email: ${urlInviteEmail}`);return render();}
+          role=urlInviteRole;
+          company=urlInviteCompany;
+        }
+        companies=ensureCompanyListed(companies,company,companyName(company));
       }else{
         const label=inputCompany||`${name}'s Team`;
         company=uniqueCompanyId(label);
@@ -1466,7 +1481,8 @@ function wire(){
         invited:false
       }).catch(()=>{});
       await sbSignOut();
-      setAuth({...auth,companies,users,invites,session:null,mode:'login',note:'Account created. Please log in with your new password.'});
+      const needsConfirm=!sign.data?.session;
+      setAuth({...auth,companies,users,invites,session:null,mode:'login',note:needsConfirm?'Account created. Please confirm your email, then log in.':'Account created. Please log in with your new password.'});
       toast('Account created');
       render();
     });
