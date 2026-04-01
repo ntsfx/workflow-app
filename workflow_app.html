@@ -408,7 +408,13 @@ const urlParams=new URLSearchParams(location.search);
 const urlInviteCode=urlParams.get('invite')||'';
 const urlMode=(urlParams.get('mode')||'').toLowerCase();
 const urlInviteEmail=(urlParams.get('email')||'').toLowerCase();
-if((urlInviteCode||urlMode==='signup')&&!auth.session)auth.mode='signup';
+if(urlInviteCode||urlMode==='signup'){
+  auth.mode='signup';
+  auth.note='Invite flow active. Create your own password to continue.';
+  if(auth.session){
+    auth.session=null;
+  }
+}
 
 const snap=readFirstJSON([APP_KEY,'workflow_app_state_v3'],null);
 if(snap){
@@ -1406,7 +1412,7 @@ function wire(){
       const inputCompany=$('su-company')?.value.trim()||'';
       const inviteCode=$('su-invite')?.value.trim()||'';
       if(!name||!email||pass.length<6){setMode('signup','Please enter valid details (password minimum 6 chars).');return render();}
-      const sbReady=ensureSupabaseFromInputs();
+      if(!ensureSupabaseFromInputs()){setMode('signup','Supabase connection required. Enter URL + anon key and click Save Supabase settings.');return render();}
       const existing=auth.users.find(u=>u.email===email);
       let role='member';
       let company=DEFAULT_COMPANY;
@@ -1425,29 +1431,6 @@ function wire(){
         companies=[...companies,{id:company,name:label}];
         const projId=createCompanyWorkspace(company,label);
         activePid=projId;
-      }
-      if(!sbReady){
-        let users=[...auth.users];
-        if(existing){
-          users=users.map(u=>u.email===email?{
-            ...u,
-            password:pass,
-            name,
-            verified:true,
-            otpRequired:false,
-            code:'',
-            role,
-            title:role==='admin'?'Team Admin':'Team Member',
-            company,
-            invited:false
-          }:u);
-        }else{
-          users=[...users,{email,password:pass,name,verified:true,otpRequired:false,code:'',role,title:role==='admin'?'Team Admin':'Team Member',color:COLORS[auth.users.length%COLORS.length],company,invited:false}];
-        }
-        setAuth({...auth,companies,users,invites,session:{email,name,company},mode:'login',note:'Running in local mode (Supabase not configured yet).'});
-        toast('Account created');
-        render();
-        return;
       }
       const sign=await sbSignUp(email,pass,{name,role,company,companyName:companyName(company)});
       if(sign.error){
@@ -1481,11 +1464,8 @@ function wire(){
         color:COLORS[users.length%COLORS.length],
         invited:false
       }).catch(()=>{});
-      setAuth({...auth,companies,users,mode:'login',note:sign.data?.session?'Account created and signed in.':'Account created. Please log in.'});
-      if(sign.data?.session&&sessionUser){
-        ensureLocalAccount(email,{name,role,company,companyName:companyName(company)});
-        setAuth({...auth,companies:[...auth.companies],users:[...auth.users],session:{email,name,company},note:''});
-      }
+      await sbSignOut();
+      setAuth({...auth,companies,users,invites,session:null,mode:'login',note:'Account created. Please log in with your new password.'});
       toast('Account created');
       render();
     });
@@ -1493,16 +1473,7 @@ function wire(){
     if(li)li.addEventListener('click',async()=>{
       const email=$('li-email').value.trim().toLowerCase();
       const pass=$('li-pass').value;
-      const sbReady=ensureSupabaseFromInputs();
-      if(!sbReady){
-        const local=auth.users.find(u=>u.email===email);
-        if(!local){setMode('login','No local account found. Create account first.');return render();}
-        if(local.invited){setMode('signup','Finish account setup from your invite link first.');return render();}
-        if(!local.password||local.password!==pass){setMode('login','Invalid email or password.');return render();}
-        setAuth({...auth,session:{email:local.email,name:local.name,company:local.company},note:'Running in local mode (Supabase not configured yet).'});
-        render();
-        return;
-      }
+      if(!ensureSupabaseFromInputs()){setMode('login','Supabase connection required. Enter URL + anon key and click Save Supabase settings.');return render();}
       const sign=await sbSignIn(email,pass);
       if(sign.error){
         const invited=auth.users.find(u=>u.email===email&&u.invited);
@@ -1926,6 +1897,9 @@ function wire(){
 async function initApp(){
   if(sb){
     try{
+      if(urlInviteCode||urlMode==='signup'){
+        await sb.auth.signOut();
+      }
       const {data,error}=await sb.auth.getSession();
       if(!error&&data?.session?.user){
         const su=data.session.user;
