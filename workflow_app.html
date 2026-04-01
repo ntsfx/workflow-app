@@ -257,6 +257,7 @@ const SB_STATES='wf_states';
 let saveTimer=null;
 let searchTimer=null;
 let remoteSaveTimer=null;
+let pollTimer=null;
 
 function readJSON(k,fallback){
   try{
@@ -1702,6 +1703,7 @@ function wire(){
     const v=$('chat-inp')?.value.trim();
     if(!v)return;
     S.chats.push({id:'m'+Date.now(),company:currentCompany(),who:me(),text:v,ts:Date.now()});
+    persistSoon();
     render();
   });
   const chatInp=$('chat-inp');
@@ -1932,6 +1934,15 @@ async function initApp(){
         }
       }
     }catch(_){}
+  }
+  if(!pollTimer){
+    pollTimer=setInterval(async()=>{
+      if(!auth.session||!sb)return;
+      try{
+        await sbLoadCompanyState(currentCompany());
+        if(activeSection==='chat')render();
+      }catch(_){}
+    },5000);
   }
   render();
 }
