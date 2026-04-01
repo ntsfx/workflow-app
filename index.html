@@ -17,6 +17,12 @@
   --radius:10px;--radius-sm:6px;
   font-family:'DM Sans',sans-serif;
 }
+html[data-theme='light']{
+  --bg:#f3f4f8;--surface:#ffffff;--surface2:#f6f7fb;--surface3:#eef0f7;
+  --border:#d8dcea;--border2:#c9d0e4;
+  --text:#161a27;--text2:#475069;--text3:#6b7390;
+  --accent:#635bff;--accent2:#5046ea;--accent-bg:rgba(99,91,255,0.1);
+}
 html,body{height:100%;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;overflow:hidden}
 #root{display:flex;height:100vh}
 
@@ -169,6 +175,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-size:14px;line
 /* UTILS */
 .flex{display:flex}.aic{align-items:center}.gap6{gap:6px}.gap8{gap:8px}.gap10{gap:10px}
 input[type=date].msel{color-scheme:dark}
+html[data-theme='light'] input[type=date].msel{color-scheme:light}
 
 /* AUTH */
 .auth-wrap{height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:
@@ -208,7 +215,8 @@ radial-gradient(circle at 80% 100%,rgba(52,211,153,0.16),transparent 36%),var(--
 <script>
 const COLORS=['#7c6af7','#34d399','#f472b6','#60a5fa','#fbbf24','#f87171','#a78bfa'];
 const AVATARS={Alex:'#7c6af7',Sam:'#34d399',Jordan:'#f472b6',Casey:'#60a5fa',Morgan:'#fbbf24'};
-const TASK_GROUPS=['CRM','PAID MEDIA','ORGANIC SOCIAL','DEVELOPERS'];
+const TASK_GROUPS=['CRM','PAID MEDIA','SOCIAL','DEVELOPERS'];
+const DEFAULT_GROUP_COLORS={CRM:'#7c6af7','PAID MEDIA':'#fbbf24',SOCIAL:'#34d399',DEVELOPERS:'#60a5fa'};
 const DEFAULT_COMPANY='company-a';
 
 const INIT={
@@ -282,7 +290,9 @@ function normalizePrefs(p){
   const src=(p&&typeof p==='object')?p:{};
   return {
     assigneeByGroup:(src.assigneeByGroup&&typeof src.assigneeByGroup==='object')?src.assigneeByGroup:{},
-    dailyDigestSent:(src.dailyDigestSent&&typeof src.dailyDigestSent==='object')?src.dailyDigestSent:{}
+    dailyDigestSent:(src.dailyDigestSent&&typeof src.dailyDigestSent==='object')?src.dailyDigestSent:{},
+    themeByEmail:(src.themeByEmail&&typeof src.themeByEmail==='object')?src.themeByEmail:{},
+    groupColorsByEmail:(src.groupColorsByEmail&&typeof src.groupColorsByEmail==='object')?src.groupColorsByEmail:{}
   };
 }
 let prefs=normalizePrefs(readJSON(PREF_KEY,{}));
@@ -407,6 +417,7 @@ let search='';
 let showNewModal=false;
 let showAiStudio=false;
 let showUserModal=false;
+let showAppearanceModal=false;
 let profileEmail='';
 let stInputOpen=false;
 let newTask={title:'',cid:'',pri:'medium',group:'CRM',who:'Alex',due:'',desc:''};
@@ -454,6 +465,41 @@ const taskMembers=t=>Array.from(new Set([t.who,...(Array.isArray(t.collabs)?t.co
 const companyUsers=()=>auth.users.filter(u=>u.company===currentCompany());
 const memberList=()=>Array.from(new Set(companyUsers().map(u=>u.name).filter(Boolean)));
 const cleanWords=s=>(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>3);
+const currentEmail=()=>auth?.session?.email||'';
+function normalizeHex(v,fallback='#7c6af7'){
+  const raw=(v||'').trim();
+  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(raw)?raw:fallback;
+}
+function userTheme(){
+  const e=currentEmail();
+  const t=e?prefs.themeByEmail[e]:'';
+  return t==='light'?'light':'dark';
+}
+function applyTheme(){
+  document.documentElement.setAttribute('data-theme',userTheme());
+}
+function userGroupColors(){
+  const e=currentEmail();
+  const saved=(e&&prefs.groupColorsByEmail[e]&&typeof prefs.groupColorsByEmail[e]==='object')?prefs.groupColorsByEmail[e]:{};
+  return {
+    CRM:normalizeHex(saved.CRM,DEFAULT_GROUP_COLORS.CRM),
+    'PAID MEDIA':normalizeHex(saved['PAID MEDIA'],DEFAULT_GROUP_COLORS['PAID MEDIA']),
+    SOCIAL:normalizeHex(saved.SOCIAL,DEFAULT_GROUP_COLORS.SOCIAL),
+    DEVELOPERS:normalizeHex(saved.DEVELOPERS,DEFAULT_GROUP_COLORS.DEVELOPERS)
+  };
+}
+function groupColor(group){
+  const g=normalizeGroup(group);
+  return userGroupColors()[g]||DEFAULT_GROUP_COLORS[g]||'#7c6af7';
+}
+function hexToRgba(hex,alpha=0.18){
+  const h=(hex||'').replace('#','');
+  const full=h.length===3?h.split('').map(c=>c+c).join(''):h;
+  if(!/^[0-9a-fA-F]{6}$/.test(full))return `rgba(124,106,247,${alpha})`;
+  const n=parseInt(full,16);
+  const r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 function assigneeMemoryKey(companyId,group){
   return `${companyId||DEFAULT_COMPANY}::${normalizeGroup(group||'CRM')}`;
 }
@@ -651,6 +697,7 @@ function persistSoon(){
 function setAuth(next){
   auth=normalizeAuth(next);
   writeJSON(AUTH_KEY,auth);
+  applyTheme();
   remotePersistSoon();
 }
 S.tasks.forEach(ensureTaskShape);
@@ -671,7 +718,7 @@ function taskPid(task){return colById(task.cid)?.pid||activePid}
 function normalizeGroup(g){
   const raw=(g||'').toString().trim().toUpperCase();
   if(raw==='PAID MEDIA')return 'PAID MEDIA';
-  if(raw==='ORGANIC SOCIAL')return 'ORGANIC SOCIAL';
+  if(raw==='ORGANIC SOCIAL'||raw==='SOCIAL')return 'SOCIAL';
   if(raw==='DEVELOPERS'||raw==='DEV')return 'DEVELOPERS';
   if(raw==='CRM')return 'CRM';
   return 'CRM';
@@ -699,7 +746,7 @@ Timeline:
 - Build:
 - Launch:
 - First review:`;
-  if(g==='ORGANIC SOCIAL')return `Objective:
+  if(g==='SOCIAL')return `Objective:
 Plan and publish ${t}.
 
 Channels:
@@ -778,12 +825,12 @@ function makeScopedColumns(section){
     return true;
   });
   const groups=[
-    {id:'g-crm',name:'CRM',color:'#7c6af7',tasks:[]},
-    {id:'g-paid',name:'PAID MEDIA',color:'#fbbf24',tasks:[]},
-    {id:'g-organic',name:'ORGANIC SOCIAL',color:'#34d399',tasks:[]},
-    {id:'g-dev',name:'DEVELOPERS',color:'#60a5fa',tasks:[]}
+    {id:'g-crm',name:'CRM',color:groupColor('CRM'),tasks:[]},
+    {id:'g-paid',name:'PAID MEDIA',color:groupColor('PAID MEDIA'),tasks:[]},
+    {id:'g-social',name:'SOCIAL',color:groupColor('SOCIAL'),tasks:[]},
+    {id:'g-dev',name:'DEVELOPERS',color:groupColor('DEVELOPERS'),tasks:[]}
   ];
-  const idx={CRM:0,'PAID MEDIA':1,'ORGANIC SOCIAL':2,DEVELOPERS:3};
+  const idx={CRM:0,'PAID MEDIA':1,SOCIAL:2,DEVELOPERS:3};
   scoped.forEach(t=>{
     const key=normalizeGroup(t.group);
     groups[idx[key]].tasks.push(t);
@@ -793,7 +840,12 @@ function makeScopedColumns(section){
 function progress(task){if(!task.subs.length)return null;return Math.round(task.subs.filter(s=>s.done).length/task.subs.length*100)}
 function priColor(p){return p==='high'?'var(--red)':p==='medium'?'var(--amber)':'var(--text3)'}
 function tagStyle(tag){
-  const m={CRM:'var(--accent)', 'PAID MEDIA':'var(--amber)', 'ORGANIC SOCIAL':'var(--green)', DEVELOPERS:'var(--blue)', Design:'var(--pink)',Dev:'var(--blue)',Research:'var(--accent2)',Content:'var(--green)',Admin:'var(--text2)',UI:'var(--pink)',Infra:'var(--amber)',Strategy:'var(--amber)'};
+  const normalized=normalizeGroup(tag);
+  if(TASK_GROUPS.includes(normalized)){
+    const c=groupColor(normalized);
+    return`color:${c};background:${hexToRgba(c,0.16)};border:1px solid ${hexToRgba(c,0.4)}`;
+  }
+  const m={Design:'var(--pink)',Dev:'var(--blue)',Research:'var(--accent2)',Content:'var(--green)',Admin:'var(--text2)',UI:'var(--pink)',Infra:'var(--amber)',Strategy:'var(--amber)'};
   const c=m[tag]||'var(--text2)';return`color:${c};background:${c}22`;
 }
 function memberAvatars(names,size=20){
@@ -1043,6 +1095,7 @@ function html(){
 ${openTid?taskModal():''}
 ${showNewModal?newModal():''}
 ${showAiStudio?aiStudioModal():''}
+${showAppearanceModal?appearanceModal():''}
 ${showUserModal?userModal():''}`;
 }
 
@@ -1125,6 +1178,7 @@ function topbar(){
 ${isAdmin()?`<select id="company-switch" class="msel" style="width:170px;padding:6px 9px">${auth.companies.map(c=>`<option value="${c.id}"${c.id===currentCompany()?' selected':''}>${c.name}</option>`).join('')}</select>`:''}
 <div class="search-wrap"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="color:var(--text3)"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5l2.5 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><input id="s-inp" placeholder="Search tasks…" value="${search}"></div>
 ${showViews?`<div class="view-tabs"><div class="v-tab ${activeView==='board'?'active':''}" data-view="board">Board</div><div class="v-tab ${activeView==='list'?'active':''}" data-view="list">List</div></div>`:''}
+<button class="btn btn-ghost" id="appearance-btn">Appearance</button>
 ${isAdmin()?`<button class="btn btn-ghost" id="users-btn">Users</button>`:''}
 <button class="btn btn-ghost" id="ai-btn">AI Studio</button>
 <button class="btn btn-ghost" id="filter-btn"><svg viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Filter</button>
@@ -1249,7 +1303,7 @@ function calendarView(){
   for(let d=1;d<=days;d++)cells.push({day:d,muted:false,tasks:byDay[d]||[]});
   while(cells.length%7!==0)cells.push({day:cells.length%7+1,muted:true,tasks:[]});
   const wds=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  let h=`<div class="list-view"><div class="lg"><div class="lg-hdr"><span class="lg-hdr-title">${start.toLocaleDateString('en-US',{month:'long',year:'numeric'})}</span><span style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${monthTasks.length} due</span></div><div class="cal-grid">${wds.map(w=>`<div class="cal-wd">${w}</div>`).join('')}${cells.map(c=>`<div class="cal-cell${c.muted?' muted':''}"><div class="cal-day">${c.day}</div>${c.tasks.slice(0,3).map(t=>`<div class="cal-task" data-tid="${t.id}">${t.title}</div>`).join('')}${c.tasks.length>3?`<div class="up-note">+${c.tasks.length-3} more</div>`:''}</div>`).join('')}</div></div></div>`;
+  let h=`<div class="list-view"><div class="lg"><div class="lg-hdr"><span class="lg-hdr-title">${start.toLocaleDateString('en-US',{month:'long',year:'numeric'})}</span><span style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">${monthTasks.length} due</span></div><div class="cal-grid">${wds.map(w=>`<div class="cal-wd">${w}</div>`).join('')}${cells.map(c=>`<div class="cal-cell${c.muted?' muted':''}"><div class="cal-day">${c.day}</div>${c.tasks.slice(0,3).map(t=>{const gc=groupColor(t.group);return`<div class="cal-task" data-tid="${t.id}" style="border-color:${hexToRgba(gc,0.55)};background:${hexToRgba(gc,0.18)};color:${gc}">${t.title}</div>`;}).join('')}${c.tasks.length>3?`<div class="up-note">+${c.tasks.length-3} more</div>`:''}</div>`).join('')}</div></div></div>`;
   return h;
 }
 
@@ -1289,6 +1343,22 @@ ${studioChat.length?studioChat.map(m=>`<div class="brief-msg ${m.role==='user'?'
 <div class="ai-box"><div class="ai-out" id="ai-out">${studioOut||'No output yet.'}</div></div>
 </div>
 <div class="modal-foot"><button class="btn btn-ghost" id="ai-clear">Clear</button><button class="btn btn-primary" id="ai-use-prompt">Use Prompt In Task</button></div>
+</div></div>`;
+}
+
+function appearanceModal(){
+  const colors=userGroupColors();
+  return`<div class="overlay" id="app-ov"><div class="modal">
+<div class="modal-hdr"><div style="flex:1"><div style="font-size:18px;font-weight:600">Appearance</div><div style="font-size:12px;color:var(--text3)">Theme and department calendar colors</div></div><button class="mclose" id="app-close"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1.5 1.5l8 8M9.5 1.5l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+<div class="modal-body">
+<div class="mfield" style="margin-bottom:12px"><div class="mlabel">Theme</div><select class="msel" id="theme-select"><option value="dark"${userTheme()==='dark'?' selected':''}>Dark</option><option value="light"${userTheme()==='light'?' selected':''}>Light</option></select></div>
+<div class="mlabel" style="margin-bottom:8px">Department Colors</div>
+<div class="mrow">
+${TASK_GROUPS.map(g=>`<div class="mfield"><div class="mlabel">${g}</div><input type="color" class="msel" id="dep-color-${g.replace(/\s+/g,'-').toLowerCase()}" value="${normalizeHex(colors[g],DEFAULT_GROUP_COLORS[g])}" style="height:34px;padding:4px 6px"></div>`).join('')}
+</div>
+<div class="up-note">These colors apply to your calendar and department tags.</div>
+</div>
+<div class="modal-foot"><button class="btn btn-ghost" id="app-cancel">Cancel</button><button class="btn btn-primary" id="app-save">Save appearance</button></div>
 </div></div>`;
 }
 
@@ -1610,6 +1680,30 @@ function wire(){
     setTimeout(()=>maybeSendDailyDueDigest(company),60);
     render();
   });
+  // Appearance
+  const apBtn=$('appearance-btn');
+  if(apBtn)apBtn.addEventListener('click',()=>{showAppearanceModal=true;render();});
+  const apClose=$('app-close');if(apClose)apClose.addEventListener('click',()=>{showAppearanceModal=false;render()});
+  const apCancel=$('app-cancel');if(apCancel)apCancel.addEventListener('click',()=>{showAppearanceModal=false;render()});
+  const apOv=$('app-ov');if(apOv)apOv.addEventListener('click',e=>{if(e.target===apOv){showAppearanceModal=false;render()}});
+  const apSave=$('app-save');
+  if(apSave)apSave.addEventListener('click',()=>{
+    const email=currentEmail();
+    if(!email){showAppearanceModal=false;return render();}
+    const theme=$('theme-select')?.value==='light'?'light':'dark';
+    prefs.themeByEmail[email]=theme;
+    const nextColors={};
+    TASK_GROUPS.forEach(g=>{
+      const id=`dep-color-${g.replace(/\s+/g,'-').toLowerCase()}`;
+      nextColors[g]=normalizeHex($(id)?.value||DEFAULT_GROUP_COLORS[g],DEFAULT_GROUP_COLORS[g]);
+    });
+    prefs.groupColorsByEmail[email]=nextColors;
+    savePrefs();
+    applyTheme();
+    showAppearanceModal=false;
+    toast('Appearance updated');
+    render();
+  });
   // User management
   const usersBtn=$('users-btn');
   if(usersBtn)usersBtn.addEventListener('click',()=>{
@@ -1793,7 +1887,7 @@ function wire(){
   if(out)out.addEventListener('click',async()=>{
     await sbSignOut();
     setAuth({...auth,session:null,mode:'login',note:''});
-    openTid=null;showNewModal=false;showAiStudio=false;showUserModal=false;
+    openTid=null;showNewModal=false;showAiStudio=false;showUserModal=false;showAppearanceModal=false;
     render();
   });
   // New task
@@ -1985,6 +2079,7 @@ function wire(){
 }
 
 async function initApp(){
+  applyTheme();
   if(sb){
     try{
       if(urlInviteCode||urlMode==='signup'){
