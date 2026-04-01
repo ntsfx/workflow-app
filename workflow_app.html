@@ -248,6 +248,7 @@ const INIT={
 const APP_KEY='workflow_app_state_v4';
 const AUTH_KEY='workflow_auth_v4';
 const SB_CFG_KEY='wf_supabase_cfg_v1';
+const PREF_KEY='workflow_user_prefs_v1';
 const DEMO_CODE='246810';
 const SUPABASE_URL='https://xzunrwhinzwvjvepkwsy.supabase.co';
 const SUPABASE_ANON_KEY='sb_publishable_AewVPtY8Wn3v_iNcZXL0mw_hf017MEP';
@@ -277,6 +278,15 @@ function readFirstJSON(keys,fallback){
 function writeJSON(k,v){
   try{localStorage.setItem(k,JSON.stringify(v));}catch(_){}
 }
+function normalizePrefs(p){
+  const src=(p&&typeof p==='object')?p:{};
+  return {
+    assigneeByGroup:(src.assigneeByGroup&&typeof src.assigneeByGroup==='object')?src.assigneeByGroup:{},
+    dailyDigestSent:(src.dailyDigestSent&&typeof src.dailyDigestSent==='object')?src.dailyDigestSent:{}
+  };
+}
+let prefs=normalizePrefs(readJSON(PREF_KEY,{}));
+function savePrefs(){writeJSON(PREF_KEY,prefs);}
 function getSbCfg(){
   const cfg=readJSON(SB_CFG_KEY,{url:'',anon:''})||{};
   return {
@@ -435,6 +445,7 @@ const $=id=>document.getElementById(id);
 const qq=sel=>document.querySelectorAll(sel);
 const currentUser=()=>auth.users.find(u=>u.email===auth?.session?.email)||null;
 const currentCompany=()=>auth?.session?.company||currentUser()?.company||DEFAULT_COMPANY;
+const usersInCompany=companyId=>auth.users.filter(u=>u.company===companyId);
 const companyName=id=>auth.companies.find(c=>c.id===id)?.name||id;
 const me=()=>currentUser()?.name||auth?.session?.name||'Alex';
 const isAdmin=()=>currentUser()?.role==='admin';
@@ -443,6 +454,54 @@ const taskMembers=t=>Array.from(new Set([t.who,...(Array.isArray(t.collabs)?t.co
 const companyUsers=()=>auth.users.filter(u=>u.company===currentCompany());
 const memberList=()=>Array.from(new Set(companyUsers().map(u=>u.name).filter(Boolean)));
 const cleanWords=s=>(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>3);
+function assigneeMemoryKey(companyId,group){
+  return `${companyId||DEFAULT_COMPANY}::${normalizeGroup(group||'CRM')}`;
+}
+function rememberedAssignee(companyId,group){
+  const key=assigneeMemoryKey(companyId,group);
+  const fromState=S.assignMemory?.[companyId]?.[normalizeGroup(group||'CRM')]||'';
+  const name=fromState||prefs.assigneeByGroup[key]||'';
+  if(!name)return '';
+  return usersInCompany(companyId).some(u=>u.name===name)?name:'';
+}
+function rememberAssignee(companyId,group,name){
+  if(!companyId||!name)return;
+  if(!S.assignMemory||typeof S.assignMemory!=='object')S.assignMemory={};
+  if(!S.assignMemory[companyId]||typeof S.assignMemory[companyId]!=='object')S.assignMemory[companyId]={};
+  S.assignMemory[companyId][normalizeGroup(group||'CRM')]=name;
+  prefs.assigneeByGroup[assigneeMemoryKey(companyId,group)]=name;
+  savePrefs();
+}
+function defaultAssigneeForGroup(group,companyId=currentCompany()){
+  return rememberedAssignee(companyId,group)||me();
+}
+function tasksDueInNext24hForCurrentUser(companyId=currentCompany()){
+  const name=me();
+  const now=Date.now();
+  const next=now+24*60*60*1000;
+  return S.tasks.filter(t=>{
+    if(t.company!==companyId||!t.due)return false;
+    if(normCol(colById(t.cid)?.name||'Other')==='Done')return false;
+    if(!taskMembers(t).includes(name))return false;
+    const dueMs=new Date(t.due).getTime();
+    return Number.isFinite(dueMs)&&dueMs>=now&&dueMs<=next;
+  }).sort((a,b)=>new Date(a.due)-new Date(b.due));
+}
+function maybeSendDailyDueDigest(companyId=currentCompany()){
+  if(!auth.session)return;
+  const day=new Date().toISOString().slice(0,10);
+  const key=`${auth.session.email}::${companyId}::${day}`;
+  if(prefs.dailyDigestSent[key])return;
+  const dueSoon=tasksDueInNext24hForCurrentUser(companyId);
+  prefs.dailyDigestSent[key]=true;
+  savePrefs();
+  if(!dueSoon.length)return;
+  const top=dueSoon.slice(0,3).map(t=>t.title).join(', ');
+  toast(`Daily update: ${dueSoon.length} task${dueSoon.length>1?'s':''} due in next 24h (${top}${dueSoon.length>3?', ...':''})`);
+  if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
+    try{new Notification('WorkFlow daily update',{body:`${dueSoon.length} task(s) due in next 24 hours.`});}catch(_){}
+  }
+}
 function ensureLocalAccount(email,meta={}){
   const e=(email||'').toLowerCase().trim();
   if(!e)return null;
@@ -511,7 +570,8 @@ function extractCompanyState(companyId){
     columns:S.columns.filter(c=>c.company===companyId),
     tasks:S.tasks.filter(t=>t.company===companyId),
     chats:(S.chats||[]).filter(c=>c.company===companyId),
-    audit:(S.audit||[]).filter(a=>a.company===companyId)
+    audit:(S.audit||[]).filter(a=>a.company===companyId),
+    assignMemory:(S.assignMemory&&S.assignMemory[companyId])?S.assignMemory[companyId]:{}
   };
 }
 function applyCompanyState(companyId,payload){
@@ -521,6 +581,8 @@ function applyCompanyState(companyId,payload){
   S.tasks=S.tasks.filter(t=>t.company!==companyId).concat(Array.isArray(payload.tasks)?payload.tasks:[]);
   S.chats=(S.chats||[]).filter(c=>c.company!==companyId).concat(Array.isArray(payload.chats)?payload.chats:[]);
   S.audit=(S.audit||[]).filter(a=>a.company!==companyId).concat(Array.isArray(payload.audit)?payload.audit:[]);
+  if(!S.assignMemory||typeof S.assignMemory!=='object')S.assignMemory={};
+  S.assignMemory[companyId]=(payload.assignMemory&&typeof payload.assignMemory==='object')?payload.assignMemory:{};
   S.tasks.forEach(ensureTaskShape);
 }
 async function sbSaveCurrentCompany(){
@@ -597,6 +659,7 @@ S.columns.forEach(c=>{if(!c.company)c.company=S.projects.find(p=>p.id===c.pid)?.
 if(!Array.isArray(S.chats))S.chats=[];
 S.chats.forEach(m=>{if(!m.company)m.company=DEFAULT_COMPANY});
 if(!Array.isArray(S.audit))S.audit=[];
+if(!S.assignMemory||typeof S.assignMemory!=='object')S.assignMemory={};
 S.audit.forEach(a=>{if(!a.company)a.company=DEFAULT_COMPANY});
 
 function companyProjects(){return S.projects.filter(p=>p.company===currentCompany())}
@@ -1502,6 +1565,7 @@ function wire(){
       const meta=u?.user_metadata||{};
       const local=ensureLocalAccount(email,{name:meta.name||email.split('@')[0],role:meta.role||'member',company:meta.company||auth.users.find(x=>x.email===email)?.company||DEFAULT_COMPANY,companyName:meta.companyName||''});
       setAuth({...auth,session:{email,name:local?.name||meta.name||email.split('@')[0],company:local?.company||meta.company||DEFAULT_COMPANY},note:''});
+      setTimeout(()=>maybeSendDailyDueDigest(),60);
       render();
     });
     return;
@@ -1543,6 +1607,7 @@ function wire(){
     const firstProj=S.projects.find(p=>p.company===company)?.id||'';
     activePid=firstProj||activePid;
     setAuth({...auth,session:{...auth.session,company}});
+    setTimeout(()=>maybeSendDailyDueDigest(company),60);
     render();
   });
   // User management
@@ -1735,7 +1800,7 @@ function wire(){
   const nb=$('new-btn');if(nb)nb.addEventListener('click',()=>{
     const pid=activeSection==='project'?activePid:S.projects[0]?.id;
     const group='CRM';
-    newTask={title:'',cid:projCols(pid)[0]?.id||'',pri:'medium',group,who:me(),due:'',desc:taskDescriptionTemplate(group,'')};
+    newTask={title:'',cid:projCols(pid)[0]?.id||'',pri:'medium',group,who:defaultAssigneeForGroup(group),due:'',desc:taskDescriptionTemplate(group,'')};
     showNewModal=true;render();
   });
   // Add column
@@ -1756,7 +1821,7 @@ function wire(){
   qq('[data-addcol]').forEach(el=>el.addEventListener('click',e=>{
     e.stopPropagation();
     const group='CRM';
-    newTask={title:'',cid:el.dataset.addcol,pri:'medium',group,who:me(),due:'',desc:taskDescriptionTemplate(group,'')};
+    newTask={title:'',cid:el.dataset.addcol,pri:'medium',group,who:defaultAssigneeForGroup(group),due:'',desc:taskDescriptionTemplate(group,'')};
     showNewModal=true;render();
   }));
   // List check
@@ -1782,6 +1847,7 @@ function wire(){
     t.cid=$('m-col').value;t.pri=$('m-pri').value;
     t.group=normalizeGroup($('m-group').value);
     t.who=$('m-who').value;t.due=$('m-due').value;
+    rememberAssignee(currentCompany(),t.group,t.who);
     t.collabs=[...qq('[data-m-collab]:checked')].map(x=>x.dataset.mCollab).filter(n=>n&&n!==t.who);
     t.desc=$('m-desc').value;
     t.ai.prompt=$('m-ai-prompt')?.value||'';
@@ -1893,8 +1959,9 @@ function wire(){
     const group=normalizeGroup($('n-group').value);
     const rawDesc=$('n-desc').value.trim();
     const desc=rawDesc||taskDescriptionTemplate(group,title);
+    rememberAssignee(currentCompany(),group,owner);
     S.tasks.push({id:'t'+Date.now(),title,cid:$('n-col').value,pri:$('n-pri').value,group,who:owner,collabs,due:$('n-due').value,tags:[],subs:[],cms:[],desc,atts:[],ai:{prompt:'',doc:'',out:''},briefChat:[],company:currentCompany()});
-    showNewModal=false;newTask={title:'',cid:'',pri:'medium',group:'CRM',who:me(),due:'',desc:''};
+    showNewModal=false;newTask={title:'',cid:'',pri:'medium',group:'CRM',who:defaultAssigneeForGroup('CRM'),due:'',desc:''};
     toast('"'+title+'" created');render();
   });
   const nTemplate=$('n-template');
@@ -1904,6 +1971,11 @@ function wire(){
   });
   const nGroup=$('n-group');
   if(nGroup)nGroup.addEventListener('change',()=>{
+    const whoEl=$('n-who');
+    if(whoEl){
+      const nextWho=defaultAssigneeForGroup(nGroup.value||'CRM');
+      if([...whoEl.options].some(o=>o.value===nextWho))whoEl.value=nextWho;
+    }
     const descEl=$('n-desc');if(!descEl)return;
     if(descEl.value.trim())return;
     descEl.value=taskDescriptionTemplate(normalizeGroup(nGroup.value||'CRM'),$('n-title')?.value||'');
@@ -1960,6 +2032,7 @@ async function initApp(){
       }catch(_){}
     },5000);
   }
+  setTimeout(()=>maybeSendDailyDueDigest(),80);
   render();
 }
 
